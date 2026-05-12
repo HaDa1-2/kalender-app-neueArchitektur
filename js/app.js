@@ -1,6 +1,6 @@
-const SUPABASE_URL='https://ihvhghzbhrujtkgkyhdi.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlodmhnaHpiaHJ1anRrZ2t5aGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzUxOTksImV4cCI6MjA5MzY1MTE5OX0.b3mGh0vSnpCK6T1CkGH1PGXMNIkqd44bJjdyYgI-PB8';
-const DEFAULT_PROXY_URL='https://ihvhghzbhrujtkgkyhdi.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
+const SUPABASE_URL='https://peikohfbuxmpxhzmxrbj.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlaWtvaGZidXhtcHhoem14cmJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDA5ODYsImV4cCI6MjA5NDE3Njk4Nn0.KIsmCS19Jiy4DnYLoUyVbKDvJ6hOa_xFCB7CDLQ0vSA';
+const DEFAULT_PROXY_URL='https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
 // Revision 038 relational persistence scaffold
 const DB_TABLES={
