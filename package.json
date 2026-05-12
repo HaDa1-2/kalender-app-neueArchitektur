@@ -1,0 +1,9 @@
+{
+  "name": "kalender-app-rev064-modular",
+  "version": "0.64.0",
+  "private": true,
+  "description": "Modularisierte Kalender-App aus kalender_rev_063.html",
+  "scripts": {
+    "start": "vercel dev"
+  }
+}
