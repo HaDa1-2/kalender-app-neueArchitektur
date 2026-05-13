@@ -1,9 +1,0 @@
-{
-  "name": "kalender-app-rev069-modular",
-  "version": "0.69.0",
-  "private": true,
-  "description": "Modularisierte Kalender-App auf Basis kalender_rev_068_monolith_final_clean.html",
-  "scripts": {
-    "start": "vercel dev"
-  }
-}
