@@ -1,43 +1,44 @@
-# Kalender App – Revision 064 modular
+# Kalender App – Revision 069 modular
 
-Ausgangsbasis: `kalender_rev_063.html`.
+Ausgangsbasis: `kalender_rev_068_monolith_final_clean.html`.
 
-Diese Revision trennt die bisherige Single-File-App in eine deployfähige Struktur:
+Dieses Paket ist die modulare Projektstruktur für GitHub + Vercel + Supabase:
 
-```text
-index.html
-css/styles.css
-js/app.js
-assets/
-api/
-vercel.json
-package.json
-.env.example
-```
+- `index.html` enthält nur die HTML-Struktur und bindet CSS/JavaScript ein.
+- `css/styles.css` enthält die komplette Oberfläche und alle bisherigen Design-Overrides.
+- `js/app.js` enthält die komplette Kalenderlogik, Supabase-Anbindung, AppState-Logik, ICS-Logik, Tasks, Projekte, Einstellungen und Rev068-Overrides.
+- `assets/architektur-kalender-app.png` enthält die Architekturvisualisierung als Referenz.
+- `api/` bleibt für spätere Vercel-Serverless-Funktionen reserviert.
+- `vercel.json` ist die minimale Vercel-Konfiguration.
+- `.env.example` dokumentiert die aktuell verwendeten Supabase-/Proxy-Werte.
 
-## Deployment über GitHub + Vercel
+## Architekturprinzip
 
-1. Neues GitHub-Repository erstellen.
-2. Den Inhalt dieses Ordners in das Repository hochladen.
-3. Neues Vercel-Projekt erstellen.
-4. Repository verbinden.
-5. Deploy ausführen.
+Die Fach-/Nutzdaten bleiben in Supabase-Tabellen: Kalendergruppen, Kalenderquellen, eigene Termine, Tagestasks, langfristige Tasks, Projekte und Gruppen.
 
-## Supabase-Hinweis
+Der AppState ist nur für UI-/Anzeigeeinstellungen vorgesehen: sichtbare Tage, Zeilen, Startmodus, Ansichtsmodus, Theme, Kanten, Markierungen, Zeitstrahl-Einstellungen, Urlaubstage-/Arbeitstag-Anzeige und ähnliche Darstellungsoptionen.
 
-Die Supabase-URL, der Anon-Key und die Proxy-URL stehen aktuell noch in `js/app.js`, weil diese Revision bewusst ohne Build-System bleibt.
+## Deployment
 
-Suche in `js/app.js` nach:
+1. Inhalt dieses Ordners in ein GitHub-Repository hochladen.
+2. Vercel-Projekt mit dem Repository verbinden.
+3. Deployment starten.
+4. Supabase-Projekt und Edge Function `ics-proxy` müssen erreichbar bleiben, sobald externe ICS-Kalender genutzt werden.
 
-```js
-const SUPABASE_URL = ...
-const SUPABASE_ANON_KEY = ...
-const DEFAULT_PROXY_URL = ...
-```
+## Revisionen künftig
 
-Dort kannst du später die Werte der neuen Supabase-Testdatenbank eintragen.
+Bei kleineren Änderungen sollen nur die betroffenen Dateien ersetzt werden, z. B. nur `css/styles.css` für reine Designänderungen oder nur `js/app.js` für Funktionsänderungen.
 
-## Edge Function / ICS Proxy
 
-Für reine Testdaten ohne externe ICS-Kalender ist die Edge Function zunächst nicht notwendig.
-Sobald externe ICS-Kalender eingebunden werden, muss der Proxy im neuen Supabase-Projekt wieder bereitstehen.
+## Revision 070
+
+Änderungen:
+- Urlaubstage werden nur noch bei sichtbaren ganztägigen Terminen mit exakt dem Titel „Urlaub“ und nur an Werktagen markiert. Samstag/Sonntag sind ausgeschlossen.
+- Wochenenden können separat mit eigener Farbe und Deckkraft markiert werden.
+- Hinweise-Reiter in den allgemeinen Einstellungen enthält konkrete Erklärungen.
+- Synchronisierung enthält einen harten Speicherbutton für App-State und relationale Tabellen.
+- Änderungen an bestehenden ICS-/eigenen Kalenderquellen werden direkt in `calendar_sources` gespeichert.
+- Eigene Termine, Tagestasks, Langzeittasks und Projekt-Tasks sind ohne Titel speicherbar. Enter speichert, Shift+Enter erzeugt Zeilenumbrüche.
+
+Nicht umgesetzt:
+- Keine automatische Löschung fehlender Datensätze beim harten Speichern, um versehentliche Datenverluste in Supabase zu vermeiden.

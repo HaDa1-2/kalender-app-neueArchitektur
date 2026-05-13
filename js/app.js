@@ -1,6 +1,124 @@
-const SUPABASE_URL='https://peikohfbuxmpxhzmxrbj.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlaWtvaGZidXhtcHhoem14cmJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDA5ODYsImV4cCI6MjA5NDE3Njk4Nn0.KIsmCS19Jiy4DnYLoUyVbKDvJ6hOa_xFCB7CDLQ0vSA';
-const DEFAULT_PROXY_URL='https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
+/* Rev 051: Monatslogik, Zeitstrahl-Schrift, eigene Termine bearbeitbar */
+(function(){
+  function toDateInputRev51(d){
+    const x=new Date(d); if(isNaN(x))return fmtDate(new Date()); return fmtDate(x);
+  }
+  function toTimeInputRev51(d, fallback='09:00'){
+    const x=new Date(d); if(isNaN(x))return fallback;
+    return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0');
+  }
+  function parseLocalDateTimeRev51(date,time,allDay,endOfDay=false){
+    if(allDay)return new Date(date+(endOfDay?'T23:59:00':'T00:00:00'));
+    return new Date(date+'T'+(time||'00:00')+':00');
+  }
+  function monthEventsForDayRev51(d){
+    return visibleCalendars().flatMap(({cal:c})=>{
+      const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});
+      const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});
+      return [...ics,...own];
+    }).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status,allDay:!!e.allDay,start:e.start||''}))
+      .sort((a,b)=>Number(!b.allDay)-Number(!a.allDay)||new Date(a.start)-new Date(b.start));
+  }
+  window.renderMonthView=function(){
+    const root=$('#monthView');if(!root)return;
+    const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+    const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
+    const days=['Mo','Di','Mi','Do','Fr','Sa','So'];
+    let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
+    const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);
+    const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate&&t.dueDate<todayIso&&!t.done));
+    for(let i=0;i<42;i++){
+      const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
+      const events=monthEventsForDayRev51(d);
+      const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate===iso&&!t.done));
+      const showOverdueBar=sameDay(d,today)&&openOverdueToday;
+      const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';
+      const compactAll=events.length>2;
+      const evHtml=events.slice(0,4).map((e,idx)=>{
+        const compact=compactAll||String(e.summary||'').length>24||idx>1;
+        return `<div class="month-event ${compact?'month-event-compact':''} ${e.allDay?'month-event-all-day':''}" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${compact?'':escapeHtml(shortText(e.summary,24))}</div>`;
+      }).join('');
+      html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${dateDERev046(d)} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${evHtml}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;
+    }
+    html+='</div>';root.innerHTML=html;
+    $('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};
+    $('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};
+    $$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});
+  };
+
+  async function updateOwnEventRev51(event, oldData){
+    if(!currentUser||!isUuid(event.id))throw new Error('Termin ist nicht sauber in der Datenbank referenziert.');
+    const exists=await ownEventExistsRev046(event.id);
+    if(!exists)throw new Error('Der Termin existiert nicht mehr. Er wurde vermutlich auf einem anderen Gerät gelöscht.');
+    const row={
+      calendar_source_id:event.sourceId,
+      title:event.summary||'Ohne Titel',
+      location:event.location||null,
+      description:event.description||null,
+      start_time:event.start,
+      end_time:event.end||null,
+      all_day:!!event.allDay,
+      recurrence:event.recurrence||'none',
+      travel_time:event.travelTime||null,
+      status:event.status||'active',
+      updated_at:new Date().toISOString()
+    };
+    const {error}=await supabaseClient.from('own_events').update(row).eq('user_id',currentUser.id).eq('id',event.id);
+    if(error)throw error;
+    if(typeof logOwnEventRev047==='function')await logOwnEventRev047('update',oldData,event);
+  }
+  function openOwnEventEditModalRev51(calIdx,evtIdx){
+    if(!requireLogin())return;
+    const cal=state.calendars[Number(calIdx)];
+    const evt=(cal?.ownEvents||[])[Number(evtIdx)];
+    if(!cal||!evt)return toast('Eigener Termin lokal nicht gefunden.');
+    const ownSources=(cal.links||[]).filter(l=>l.type==='own');
+    const dateVal=toDateInputRev51(evt.start), startVal=toTimeInputRev51(evt.start,'09:00'), endVal=toTimeInputRev51(evt.end,'10:00');
+    $('#modalTitle').textContent='Eigenen Termin bearbeiten';
+    $('#modalContent').innerHTML=`<div class="own-event-edit-grid"><label>Titel</label><input id="editOwnTitleRev51" value="${escapeHtml(evt.summary||'')}"><label>Eigener Kalender</label><select id="editOwnSourceRev51">${ownSources.map(l=>`<option value="${escapeHtml(l.id)}" ${evt.sourceId===l.id?'selected':''}>${escapeHtml(l.name)}</option>`).join('')}</select><label>Ort</label><input id="editOwnLocationRev51" value="${escapeHtml(evt.location||'')}"><label>Datum</label><input id="editOwnDateRev51" type="date" value="${escapeHtml(dateVal)}"><label>Wiederholung</label><select id="editOwnRecurrenceRev51"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select><label>Ganztägig</label><select id="editOwnAllDayRev51"><option value="false">Nein</option><option value="true">Ja</option></select><label>Startzeit</label><input id="editOwnStartRev51" type="time" value="${escapeHtml(startVal)}"><label>Endzeit</label><input id="editOwnEndRev51" type="time" value="${escapeHtml(endVal)}"><label>Wegzeit</label><input id="editOwnTravelRev51" value="${escapeHtml(evt.travelTime||'')}" placeholder="z. B. 20 Min."><label>Details / Notizen</label><textarea id="editOwnDescriptionRev51" rows="5">${escapeHtml(evt.description||'')}</textarea><button class="btn danger" id="deleteOwnFromEditRev51" type="button">Eigenen Termin / Serie löschen</button></div>`;
+    $('#editOwnRecurrenceRev51').value=evt.recurrence||'none';
+    $('#editOwnAllDayRev51').value=evt.allDay?'true':'false';
+    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';
+    $('#saveModal').onclick=async()=>{
+      const oldData=structuredClone(evt);
+      const sourceId=$('#editOwnSourceRev51').value;
+      const src=ownSources.find(l=>l.id===sourceId)||ownSources[0];
+      const title=$('#editOwnTitleRev51').value.trim(); if(!title)return toast('Termin ohne Titel wird nicht gespeichert.');
+      const date=$('#editOwnDateRev51').value||dateVal;
+      const allDay=$('#editOwnAllDayRev51').value==='true';
+      evt.sourceId=sourceId;evt.summary=title;evt.location=$('#editOwnLocationRev51').value.trim();evt.recurrence=$('#editOwnRecurrenceRev51').value||'none';evt.allDay=allDay;
+      evt.start=parseLocalDateTimeRev51(date,$('#editOwnStartRev51').value,allDay,false).toISOString();
+      evt.end=parseLocalDateTimeRev51(date,$('#editOwnEndRev51').value,allDay,true).toISOString();
+      evt.travelTime=$('#editOwnTravelRev51').value.trim();evt.description=$('#editOwnDescriptionRev51').value.trim();evt.source=src?.name||cal.name;evt.icsName=src?.name||cal.name;evt.icsColor=src?.color||state.colors.event;evt.status=evt.status||'active';
+      try{await updateOwnEventRev51(evt,oldData);closeModal();render();toast('Eigener Termin aktualisiert.');}
+      catch(error){toast(error.message||String(error));closeModal();await loadStateFromCloud();}
+    };
+    $('#deleteOwnFromEditRev51').onclick=async()=>{
+      if(!confirm('Eigenen Termin / Serie löschen?'))return;
+      try{await deleteOwnEventRev046(evt.id);cal.ownEvents.splice(Number(evtIdx),1);closeModal();render();toast('Eigener Termin gelöscht.');}
+      catch(error){toast(error.message||String(error));closeModal();await loadStateFromCloud();}
+    };
+  }
+  const prevOpenEventDetailRev51=openEventDetailModal;
+  openEventDetailModal=function(ref){
+    const [type,calIdx,evtIdx]=String(ref||'').split(':');
+    if(type==='own')return openOwnEventEditModalRev51(calIdx,evtIdx);
+    return prevOpenEventDetailRev51(ref);
+  };
+
+  const prevRenderSidebarTimelineRev51=window.renderSidebarTimelineRev050;
+  window.renderSidebarTimelineRev050=function(){
+    prevRenderSidebarTimelineRev51();
+    document.querySelectorAll('.timeline-event-block').forEach(block=>{
+      const h=parseFloat(block.style.height)||block.offsetHeight||0;
+      if(h<28)block.classList.add('timeline-event-tiny');
+    });
+  };
+})();
+
+const SUPABASE_URL='https://ihvhghzbhrujtkgkyhdi.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlodmhnaHpiaHJ1anRrZ2t5aGRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNzUxOTksImV4cCI6MjA5MzY1MTE5OX0.b3mGh0vSnpCK6T1CkGH1PGXMNIkqd44bJjdyYgI-PB8';
+const DEFAULT_PROXY_URL='https://ihvhghzbhrujtkgkyhdi.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
 // Revision 038 relational persistence scaffold
 const DB_TABLES={
@@ -3609,10 +3727,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev57State();const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettingsRev57;cleanupTrashButtons57();bindTimelinePersistence57();saveUiState57();},250);
 })();
 
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
-
 /* Rev 058: Stabiler Editor für eigene Termine ohne Rev057-MutationObserver-Schleife */
 (function(){
   function rev58IsUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));}
@@ -3725,10 +3839,6 @@ dayCard=function(date){
   document.head.appendChild(style);
 })();
 
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
-
 /* Rev 059: Projekt-Task-Seitenfarbe + Papierkorb nur im eigenen Termin-Editor */
 (function(){
   function rev59ProjectColorForTask(id){
@@ -3806,10 +3916,6 @@ dayCard=function(date){
     rev59CleanupForeignTrash();
   },250);
 })();
-
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
 
 /* Rev 060: Persistenz der allgemeinen Einstellungen explizit über Speichern + Zeitstrahlwerte zuverlässig im App-State */
 (function(){
@@ -3959,10 +4065,6 @@ dayCard=function(date){
   window.openSyncSettingsModal=openSettings60;
   setTimeout(()=>{const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettings60;bindTimeline60();},200);
 })();
-
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
 
 /* Rev 061: robuste AppState-Persistenz + saubere Own-Event-Löschaktion nur bei bestehenden eigenen Terminen */
 (function(){
@@ -4150,10 +4252,6 @@ dayCard=function(date){
   setTimeout(()=>{const modal=document.querySelector('#modalBackdrop');if(modal)observer.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettings61;ensureRev61State();applyAppearance();bindTimelineRev61();cleanupForeignTrashRev61();},150);
 })();
 
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
-
 /* Rev 062: Kontextgenaue Löschbuttons + Zeitstrahl ohne Zahnrad, Halbstundentakt fix, Start/Pause persistent */
 (function(){
   function rev62EnsureState(){
@@ -4337,10 +4435,6 @@ dayCard=function(date){
   setTimeout(()=>{rev62EnsureState();renderSidebarTimelineRev050();const modal=document.querySelector('#modalBackdrop');if(modal)observer.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});},200);
 })();
 
-/* =====================================================
-   Nächster Scriptblock aus kalender_rev_063.html
-   ===================================================== */
-
 /* Rev 063: AppState-Protokoll vollständig für Anzeige-/Zeitstrahl-Einstellungen */
 (function(){
   const REV63_DEFAULTS={
@@ -4466,4 +4560,1416 @@ dayCard=function(date){
     const settings=document.querySelector('#settingsBtn');
     if(settings && typeof openSyncSettingsModal==='function')settings.onclick=openSyncSettingsModal;
   },250);
+})();
+
+/* Rev 064: monolithischer Fix für erledigte Tasks, Monatsmodal-Papierkorb, Wochenenden/Urlaub, Projekt-Erledigt-Ansicht */
+(function(){
+  const COMPLETED_TABLE_REV64='completed_tasks';
+  const REV64_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
+  const esc=v=>escapeHtml(String(v??''));
+  const isHex=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
+  const clamp=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
+  function isWeekend64(d){const day=new Date(d).getDay();return day===0||day===6;}
+  function todayIso64(){return fmtDate(new Date());}
+  function completedType64(c){return c.type==='long'?'Langfristig':(c.type==='project'?'Projekt-Task':'Tagestask');}
+  function getCompletedList64(){state.completedTasksTable=Array.isArray(state.completedTasksTable)?state.completedTasksTable:[];return state.completedTasksTable;}
+  function normalizeCompleted64(c){
+    c.completedId=c.completedId||c.id||c.completed_id;
+    c.originalTaskId=c.originalTaskId||c.original_task_id||null;
+    c.type=c.type||c.task_type||'daily';
+    c.title=c.title||'Ohne Titel';
+    c.note=c.note||'';
+    c.originalDate=c.originalDate||c.original_date||null;
+    c.completedDate=c.completedDate||c.completed_date||todayIso64();
+    c.originalGroupId=String(c.originalGroupId||c.original_group_id||'');
+    c.originalGroupName=c.originalGroupName||c.original_group_name||'Unbekannte Gruppe';
+    c.originalGroupColor=c.originalGroupColor||c.original_group_color||null;
+    return c;
+  }
+  function ensureRev64State(){
+    state.completedTasksTable=getCompletedList64().map(normalizeCompleted64);
+    state.weekendHighlight=Object.assign({},REV64_WEEKEND_DEFAULT,state.weekendHighlight||{});
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.weekendHighlight.color=isHex(state.weekendHighlight.color)?state.weekendHighlight.color:REV64_WEEKEND_DEFAULT.color;
+    state.weekendHighlight.opacity=clamp(state.weekendHighlight.opacity,0.05,0.70,REV64_WEEKEND_DEFAULT.opacity);
+  }
+  function groupMatch64(list,id,name){
+    id=String(id||''); name=String(name||'').trim().toLowerCase();
+    return (list||[]).find(g=>String(g.id)===id) || (name?(list||[]).find(g=>String(g.name||'').trim().toLowerCase()===name):null) || null;
+  }
+  function currentGroup64(c){
+    c=normalizeCompleted64(Object.assign({},c));
+    if(c.type==='long')return groupMatch64(state.longColumns||[],c.originalGroupId,c.originalGroupName);
+    if(c.type==='project')return groupMatch64(state.projects||[],c.originalGroupId,c.originalGroupName);
+    return groupMatch64(state.taskColumns||[],c.originalGroupId,c.originalGroupName);
+  }
+  function groupExists64(c){return !!currentGroup64(c);}
+  function completedColor64(c){
+    const g=currentGroup64(c);
+    return g?.color || c.originalGroupColor || (c.type==='long'?(state.colors?.long||defaultColors.long):(c.type==='project'?'#7c5cff':(state.colors?.task||defaultColors.task)));
+  }
+  function card64(c,opts={}){
+    c=normalizeCompleted64(c);
+    const missing=!groupExists64(c);
+    const originalDate=c.originalDate?` · Ursprünglich: ${esc(c.originalDate)}`:'';
+    const disabled=missing?' disabled':'';
+    const title=missing?'Originalgruppe existiert nicht mehr':'Wieder öffnen';
+    const deleteBtn=opts.noDelete?'':`<button class="kebab completed-delete56" data-delete-completed64="${esc(c.completedId)}" title="Erledigten Eintrag löschen">×</button>`;
+    return `<div class="card task task-card-compact completed-task-card completed-table-card-rev64" data-completed-ref64="${esc(c.completedId)}" style="border-left-color:${esc(completedColor64(c))}!important"><div class="task-row"><input type="checkbox" checked${disabled} data-toggle-completed64="${esc(c.completedId)}" title="${esc(title)}"><div><span class="completed-title" title="${esc(c.title)}">${esc(shortText(c.title,34))}</span><span class="completed-meta">${esc(completedType64(c))} · Erledigt am ${esc(c.completedDate||'')} · Gruppe damals: ${esc(c.originalGroupName||'—')}${originalDate}${missing?' · Gruppe gelöscht':''}</span></div>${deleteBtn}</div></div>`;
+  }
+  function listForDay64(iso){return getCompletedList64().filter(c=>normalizeCompleted64(c).completedDate===iso);}
+  function bindCompleted64(scope=document){
+    scope.querySelectorAll('[data-toggle-completed64]').forEach(chk=>{
+      chk.onclick=ev=>ev.stopPropagation();
+      chk.onchange=async ev=>{ev.stopPropagation();if(!chk.checked)await reopen64(chk.dataset.toggleCompleted64,chk);};
+    });
+    scope.querySelectorAll('[data-delete-completed64]').forEach(btn=>{btn.onclick=ev=>{ev.stopPropagation();delete64(btn.dataset.deleteCompleted64);};});
+    scope.querySelectorAll('[data-completed-ref64]').forEach(card=>{card.onclick=ev=>{if(ev.target.closest('input,button'))return;openDetail64(card.dataset.completedRef64);};});
+  }
+  async function updateDate64(id,date){
+    const c=getCompletedList64().find(x=>String(normalizeCompleted64(x).completedId)===String(id));
+    if(!c||!date)return;
+    if(currentUser){
+      const {error}=await supabaseClient.from(COMPLETED_TABLE_REV64).update({completed_date:date}).eq('user_id',currentUser.id).eq('id',id);
+      if(error){toast('Erledigt-Datum konnte nicht gespeichert werden: '+error.message);return;}
+    }
+    c.completedDate=date; render(); toast('Erledigt-Datum geändert.');
+  }
+  async function delete64(id){
+    if(!requireLogin())return;
+    if(!confirm('Erledigten Eintrag endgültig löschen?'))return;
+    const {error}=await supabaseClient.from(COMPLETED_TABLE_REV64).delete().eq('user_id',currentUser.id).eq('id',id);
+    if(error){toast('Löschen fehlgeschlagen: '+error.message);return;}
+    state.completedTasksTable=getCompletedList64().filter(x=>String(normalizeCompleted64(x).completedId)!==String(id));
+    render();toast('Erledigter Eintrag gelöscht.');
+  }
+  async function reopen64(id,checkbox){
+    if(!requireLogin()){if(checkbox)checkbox.checked=true;return;}
+    const c=getCompletedList64().find(x=>String(normalizeCompleted64(x).completedId)===String(id));
+    if(!c){if(checkbox)checkbox.checked=true;return;}
+    normalizeCompleted64(c);
+    const g=currentGroup64(c);
+    if(!g){if(checkbox)checkbox.checked=true;toast('Diese Gruppe existiert nicht mehr. Der Task kann nicht wieder geöffnet werden.');return;}
+    try{
+      const restoredId=isUuid(c.originalTaskId)?c.originalTaskId:crypto.randomUUID();
+      if(c.type==='project'){
+        const row={id:restoredId,user_id:currentUser.id,project_id:g.id,title:c.title||'Ohne Titel',note:c.note||null,due_date:c.originalDate||null,done:false,completed_date:null,sort_order:(state.projectTasks||[]).length};
+        const {data,error}=await supabaseClient.from('project_tasks').upsert(row,{onConflict:'id'}).select('*').single();if(error)throw error;
+        state.projectTasks=state.projectTasks||[];state.projectTasks.push({id:data.id,projectId:data.project_id,title:data.title,note:data.note||'',dueDate:data.due_date||'',done:false,completedDate:null,sortOrder:data.sort_order||0,createdAt:data.created_at,updatedAt:data.updated_at});
+      }else if(c.type==='long'){
+        const row={id:restoredId,user_id:currentUser.id,long_task_group_id:g.id,title:c.title||'Ohne Titel',note:c.note||null,done:false,completed_date:null,position:(state.longterm||[]).length};
+        const {data,error}=await supabaseClient.from('long_tasks').upsert(row,{onConflict:'id'}).select('*').single();if(error)throw error;
+        state.longterm=state.longterm||[];state.longterm.push({id:data.id,title:data.title,note:data.note||'',done:false,completedDate:null,columnId:data.long_task_group_id,createdDate:fmtDate(new Date()),position:data.position||0});
+      }else{
+        const row={id:restoredId,user_id:currentUser.id,task_group_id:g.id,title:c.title||'Ohne Titel',note:c.note||null,task_date:c.originalDate||todayIso64(),done:false,completed_date:null,position:(state.tasks||[]).length};
+        const {data,error}=await supabaseClient.from('tasks').upsert(row,{onConflict:'id'}).select('*').single();if(error)throw error;
+        state.tasks=state.tasks||[];state.tasks.push({id:data.id,title:data.title,note:data.note||'',date:data.task_date,done:false,completedDate:null,columnId:data.task_group_id,position:data.position||0});
+      }
+      const {error:delError}=await supabaseClient.from(COMPLETED_TABLE_REV64).delete().eq('user_id',currentUser.id).eq('id',id);if(delError)throw delError;
+      state.completedTasksTable=getCompletedList64().filter(x=>String(normalizeCompleted64(x).completedId)!==String(id));
+      render();toast('Task wieder geöffnet.');
+    }catch(error){if(checkbox)checkbox.checked=true;toast('Wieder öffnen fehlgeschlagen: '+(error.message||String(error)));}
+  }
+  function openDetail64(id){
+    const c=getCompletedList64().find(x=>String(normalizeCompleted64(x).completedId)===String(id));if(!c)return;normalizeCompleted64(c);
+    const exists=groupExists64(c);
+    $('#modalTitle').textContent='Erledigter Task · Details';
+    $('#modalContent').innerHTML=`<div class="event-detail-grid"><b>Titel</b><div>${esc(c.title||'—')}</div><b>Typ</b><div>${esc(completedType64(c))}</div><b>Erledigt am</b><div><input id="rev64CompletedDate" type="date" value="${esc(c.completedDate||todayIso64())}"></div><b>Ursprüngliches Datum</b><div>${esc(c.originalDate||'—')}</div><b>Damals in Gruppe/Projekt</b><div>${esc(c.originalGroupName||'—')}</div><b>Status</b><div>${exists?'Originalgruppe existiert noch. Wiederöffnen ist möglich.':'Originalgruppe existiert nicht mehr. Wiederöffnen ist gesperrt.'}</div><b>Notiz</b><div>${c.note?`<div class="detail-long expanded">${esc(c.note)}</div>`:'—'}</div></div>`;
+    $('#modalBackdrop').style.display='flex';
+    const save=$('#saveModal');save.style.display='';
+    save.onclick=async()=>{await updateDate64(id,$('#rev64CompletedDate').value||c.completedDate);closeModal();};
+  }
+  function rebuildCompletedPartition64(node,date){
+    ensureRev64State();
+    const iso=fmtDate(date);
+    node.querySelectorAll('.partition').forEach(p=>{const title=p.querySelector('.part-title,summary');if(title&&title.textContent.includes('An diesem Tag erledigte Tasks'))p.remove();});
+    node.querySelectorAll('.completed-table-grid-rev54,.completed-table-grid-rev64').forEach(el=>el.remove());
+    const list=listForDay64(iso);
+    if(!list.length)return;
+    const body=node.querySelector('.day-body'); if(!body)return;
+    body.insertAdjacentHTML('beforeend',`<div class="partition rev64-completed-partition"><details class="completed-collapse rev64-completed-collapse"><summary>An diesem Tag erledigte Tasks <span class="rev64-completed-count">${list.length}</span></summary><div class="completed-collapse-body"><div class="completed-grid completed-table-grid-rev64">${list.map(c=>card64(c)).join('')}</div></div></details></div>`);
+    bindCompleted64(body.lastElementChild);
+  }
+  function decorateWeekendAndVacation64(node,date){
+    const weekend=isWeekend64(date);
+    node.classList.toggle('rev64-weekend-day',weekend && state.weekendHighlight?.enabled);
+    if(weekend){node.classList.remove('vacation-day-rev52');}
+  }
+  const oldEnsure64=ensureSettings;
+  ensureSettings=function(){oldEnsure64();ensureRev64State();};
+  const oldUi64=typeof uiStateOnly==='function'?uiStateOnly:null;
+  if(oldUi64){uiStateOnly=function(){ensureRev64State();return Object.assign({},oldUi64(),{weekendHighlight:JSON.parse(JSON.stringify(state.weekendHighlight))});};}
+  const oldApplyUi64=typeof applyUiState==='function'?applyUiState:null;
+  if(oldApplyUi64){applyUiState=function(ui){oldApplyUi64(ui);if(ui&&ui.weekendHighlight!==undefined)state.weekendHighlight=Object.assign({},REV64_WEEKEND_DEFAULT,ui.weekendHighlight||{});ensureRev64State();};}
+  const oldApplyAppearance64=applyAppearance;
+  applyAppearance=function(){oldApplyAppearance64();ensureRev64State();document.documentElement.style.setProperty('--rev64WeekendColor',state.weekendHighlight.color);document.documentElement.style.setProperty('--rev64WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');};
+
+  const oldDayCard64=dayCard;
+  dayCard=function(date){
+    const node=oldDayCard64(date);
+    decorateWeekendAndVacation64(node,date);
+    rebuildCompletedPartition64(node,date);
+    bindCompleted64(node);
+    return node;
+  };
+
+  function cleanupModalActions64(){
+    const title=document.querySelector('#modalTitle')?.textContent||'';
+    if(title.includes('Monatsübersicht')||title.includes('Einstellungen')||title.includes('Legende')||title.includes('Cloud')){
+      document.querySelectorAll('.modal-actions .rev62-delete-left,.modal-actions .own-delete-square56,.modal-actions .rev57-trash-left,.modal-actions .rev58-own-trash,.modal-actions #rev58DeleteOwnEvent,.modal-actions #deleteOwnFromEditRev51,.modal-actions #deleteModeBtnAction').forEach(x=>x.remove());
+    }
+  }
+  const oldOpenMonth64=openMonthModal;
+  openMonthModal=function(){const r=oldOpenMonth64.apply(this,arguments);setTimeout(()=>{cleanupModalActions64();decorateMonth64();},0);setTimeout(cleanupModalActions64,80);return r;};
+  window.openMonthModal=openMonthModal;
+
+  function decorateMonth64(){
+    ensureRev64State();
+    document.querySelectorAll('[data-month-date]').forEach(cell=>{
+      const d=new Date(cell.dataset.monthDate+'T00:00:00');
+      const weekend=isWeekend64(d);
+      cell.classList.toggle('rev64-weekend-cell',weekend && state.weekendHighlight.enabled);
+      if(weekend){cell.classList.remove('vacation-day-rev52');}
+    });
+  }
+  const oldRenderMonth64=window.renderMonthView||renderMonthView;
+  window.renderMonthView=renderMonthView=function(){const r=oldRenderMonth64.apply(this,arguments);decorateMonth64();cleanupModalActions64();return r;};
+
+  function injectWeekendSettings64(){
+    const root=document.querySelector('#modalContent');if(!root||document.querySelector('#rev64WeekendCard'))return;
+    const card=document.createElement('div');
+    card.id='rev64WeekendCard';card.className='rev64-settings-card';
+    card.innerHTML=`<div class="rev64-settings-title">Wochenenden</div><label class="settings-check-rev53"><span><b>Wochenenden anders anzeigen</b><small>Samstag/Sonntag erhalten eine eigene Farbe. Urlaub wird an Wochenenden nicht zusätzlich hervorgehoben.</small></span><input id="rev64WeekendEnabled" type="checkbox" ${state.weekendHighlight.enabled?'checked':''}></label><div class="rev64-color-line"><label>Wochenendfarbe</label><input id="rev64WeekendColor" type="color" value="${esc(state.weekendHighlight.color)}"><label>Deckkraft</label><input id="rev64WeekendOpacity" type="range" min="5" max="70" value="${Math.round(state.weekendHighlight.opacity*100)}"></div>`;
+    root.appendChild(card);
+  }
+  function readWeekendSettings64(){
+    const en=document.querySelector('#rev64WeekendEnabled');if(!en)return;
+    state.weekendHighlight.enabled=!!en.checked;
+    const col=document.querySelector('#rev64WeekendColor')?.value;if(isHex(col))state.weekendHighlight.color=col;
+    state.weekendHighlight.opacity=clamp((Number(document.querySelector('#rev64WeekendOpacity')?.value||28)/100),0.05,0.70,0.28);
+  }
+  const oldSettings64=window.openSyncSettingsModal||openSyncSettingsModal;
+  window.openSyncSettingsModal=openSyncSettingsModal=function(){
+    const r=oldSettings64.apply(this,arguments);
+    setTimeout(()=>{
+      ensureRev64State();injectWeekendSettings64();cleanupModalActions64();
+      const save=document.querySelector('#saveModal');
+      if(save&&!save.dataset.rev64WeekendBound){const old=save.onclick;save.dataset.rev64WeekendBound='1';save.onclick=async function(ev){readWeekendSettings64();if(old)await old.call(this,ev);else{closeModal();render();}};}
+    },20);
+    setTimeout(injectWeekendSettings64,160);
+    return r;
+  };
+
+  const oldProjectOverview64=window.openProjectOverviewModalRev49;
+  if(oldProjectOverview64){
+    window.openProjectOverviewModalRev49=function(projectId){
+      const r=oldProjectOverview64.apply(this,arguments);
+      setTimeout(()=>{
+        const p=(state.projects||[]).find(x=>String(x.id)===String(projectId));if(!p)return;
+        const list=getCompletedList64().map(normalizeCompleted64).filter(c=>c.type==='project'&&(String(c.originalGroupId)===String(p.id)||String(c.originalGroupName||'').trim().toLowerCase()===String(p.name||'').trim().toLowerCase()));
+        if(!list.length)return;
+        const sections=Array.from(document.querySelectorAll('#modalContent .project-overview-section'));
+        let doneSec=sections.find(s=>(s.querySelector('h3')?.textContent||'').toLowerCase().includes('erledigt'));
+        if(!doneSec){const grid=document.querySelector('#modalContent .project-overview-grid');if(grid){grid.insertAdjacentHTML('beforeend','<section class="project-overview-section"><h3>Erledigt</h3></section>');doneSec=grid.lastElementChild;}}
+        if(doneSec){
+          doneSec.querySelectorAll('.completed-table-card-rev64').forEach(x=>x.remove());
+          const empty=doneSec.querySelector('.empty');if(empty&&list.length)empty.remove();
+          doneSec.insertAdjacentHTML('beforeend',`<div class="completed-grid completed-table-grid-rev64">${list.map(c=>card64(c,{noDelete:true})).join('')}</div>`);
+          bindCompleted64(doneSec);
+        }
+      },0);
+      return r;
+    };
+  }
+
+  const style=document.createElement('style');
+  style.textContent=`
+    .rev64-completed-partition{border-top:1px solid rgba(49,64,94,.55)!important;padding-top:4px!important;}
+    .rev64-completed-collapse summary{cursor:pointer;list-style:none;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text);font-weight:1000;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;}
+    .rev64-completed-collapse summary::-webkit-details-marker{display:none;}
+    .rev64-completed-collapse summary::after{content:'▸';font-size:15px;font-weight:1000;}
+    .rev64-completed-collapse[open] summary::after{content:'▾';}
+    .rev64-completed-count{font-size:12px;letter-spacing:0;text-transform:none;color:var(--muted);margin-left:auto;}
+    .completed-table-card-rev64 input[disabled]{opacity:.35;cursor:not-allowed;}
+    .rev64-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent)),#0b1221!important;}
+    body.light .rev64-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    .month-cell.rev64-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent)),#070d1a!important;}
+    body.light .month-cell.rev64-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev64WeekendColor) var(--rev64WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    .rev64-settings-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827;margin-top:10px;}
+    .rev64-settings-title{font-weight:1000;color:#111827;}
+    .rev64-color-line{display:grid;grid-template-columns:minmax(130px,180px) minmax(0,1fr);gap:8px;align-items:center;}
+    .rev64-color-line label{font-size:13px;font-weight:800;color:#111827;}
+    .rev64-color-line input[type="color"]{height:38px;min-width:0;}
+    @media(max-width:700px){.rev64-color-line{grid-template-columns:1fr;}}
+  `;
+  document.head.appendChild(style);
+
+  const oldRender64=window.render||render;
+  window.render=render=function(){const r=oldRender64();ensureRev64State();applyAppearance();setTimeout(()=>{document.querySelectorAll('.day').forEach(day=>{});cleanupModalActions64();},0);return r;};
+  setTimeout(()=>{ensureRev64State();applyAppearance();cleanupModalActions64();},300);
+})();
+
+/* Rev 065: finaler Monolith-Fix: Task ohne Titel, Wochenendeinstellung, Urlaub nur Mo-Fr, Hinweise sichtbar */
+(function(){
+  const REV65_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
+  const REV65_VAC_DEFAULT={enabled:false,color:'#f97316',opacity:0.18};
+  const esc=v=>escapeHtml(String(v??''));
+  const isHex=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
+  const clamp=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
+  const isWeekend65=d=>{const x=new Date(d).getDay();return x===0||x===6;};
+  const todayIso65=()=>fmtDate(new Date());
+  const settingsColors65=['#64748b','#000000','#ffffff','#0284c7','#7c5cff','#22c55e','#ffb020','#f97316','#ff5050','#ec4899','#14b8a6','#a855f7','#e2e8f0','#f8fafc'];
+
+  function ensure65(){
+    state.vacationHighlight=Object.assign({},REV65_VAC_DEFAULT,state.vacationHighlight||{});
+    state.weekendHighlight=Object.assign({},REV65_WEEKEND_DEFAULT,state.weekendHighlight||{});
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.color=isHex(state.vacationHighlight.color)?state.vacationHighlight.color:REV65_VAC_DEFAULT.color;
+    state.weekendHighlight.color=isHex(state.weekendHighlight.color)?state.weekendHighlight.color:REV65_WEEKEND_DEFAULT.color;
+    state.vacationHighlight.opacity=clamp(state.vacationHighlight.opacity,0.05,0.55,REV65_VAC_DEFAULT.opacity);
+    state.weekendHighlight.opacity=clamp(state.weekendHighlight.opacity,0.05,0.70,REV65_WEEKEND_DEFAULT.opacity);
+  }
+
+  async function saveAppState65(){
+    ensure65();
+    try{localStorage.setItem(storeKey,JSON.stringify(stripRuntimeICSCache(state)));}catch(e){}
+    try{persist();}catch(e){}
+    if(currentUser){
+      clearTimeout(cloudSaveTimer);
+      const payload={user_id:currentUser.id,state:stripRuntimeICSCache(state),updated_at:new Date().toISOString()};
+      const {error}=await supabaseClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+      if(error){toast('App-State konnte nicht gespeichert werden: '+error.message);return false;}
+      if(typeof setCloudStatus==='function')setCloudStatus('App-State gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),'ok');
+    }
+    return true;
+  }
+
+  const prevEnsure65=ensureSettings;
+  ensureSettings=function(){prevEnsure65();ensure65();};
+  const prevApply65=applyAppearance;
+  applyAppearance=function(){
+    prevApply65();ensure65();
+    document.documentElement.style.setProperty('--rev65WeekendColor',state.weekendHighlight.color);
+    document.documentElement.style.setProperty('--rev65WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');
+  };
+
+  /* 1) Tagestask darf ohne Titel gespeichert werden. Wenn nur Notiz vorhanden ist, wird Titel = Aufgabe. Enter in der Notiz speichert. */
+  window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
+    if(!requireLogin())return;
+    ensureSettings();
+    openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea><div class="hint">Ohne Titel wird der Task automatisch als „Aufgabe“ gespeichert. Enter speichert, Shift+Enter erzeugt in der Notiz einen Zeilenumbruch.</div>`,()=>{
+      const note=($('#mNote')?.value||'').trim();
+      const rawTitle=($('#mTitle')?.value||'').trim();
+      const title=rawTitle||'Aufgabe';
+      state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate').value||date,done:false,note,columnId:$('#mTaskColumn').value});
+    });
+    setTimeout(()=>{
+      const note=$('#mNote');
+      if(note&&!note.dataset.rev65EnterBound){
+        note.dataset.rev65EnterBound='1';
+        note.addEventListener('keydown',ev=>{if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();$('#saveModal')?.click();}});
+      }
+    },0);
+  };
+
+  function dayHasVacation65(day){
+    try{
+      if(!state.vacationHighlight?.enabled || isWeekend65(day))return false;
+      return visibleCalendars().some(({cal})=>{
+        const links=cal.links||[];
+        return [...(cal.events||[]),...(cal.ownEvents||[])].some(e=>{
+          const link=links.find(l=>l.id===e.icsId||l.id===e.sourceId); if(link&&link.visible===false)return false;
+          const occ=eventOccurrenceForDate(e,day);
+          return !!(occ&&occ.allDay&&String(occ.summary||'').trim().toLowerCase()==='urlaub');
+        });
+      });
+    }catch(e){return false;}
+  }
+  function applyDayDecoration65(node,date){
+    ensure65();
+    const weekend=isWeekend65(date);
+    node.classList.toggle('rev65-weekend-day',weekend&&state.weekendHighlight.enabled);
+    if(weekend){node.classList.remove('vacation-day-rev52');}
+    if(!weekend&&dayHasVacation65(date))node.classList.add('vacation-day-rev52');
+  }
+  const prevDayCard65=dayCard;
+  dayCard=function(date){const node=prevDayCard65(date);applyDayDecoration65(node,date);return node;};
+
+  function decorateMonth65(){
+    ensure65();
+    document.querySelectorAll('[data-month-date]').forEach(cell=>{
+      const d=new Date(cell.dataset.monthDate+'T00:00:00');
+      const weekend=isWeekend65(d);
+      cell.classList.toggle('rev65-weekend-cell',weekend&&state.weekendHighlight.enabled);
+      if(weekend){cell.classList.remove('vacation-day-rev52');}
+      if(!weekend&&dayHasVacation65(d))cell.classList.add('vacation-day-rev52');
+    });
+  }
+  const prevRenderMonth65=window.renderMonthView||renderMonthView;
+  window.renderMonthView=renderMonthView=function(){const r=prevRenderMonth65.apply(this,arguments);decorateMonth65();return r;};
+  const prevOpenMonth65=openMonthModal;
+  window.openMonthModal=openMonthModal=function(){const r=prevOpenMonth65.apply(this,arguments);setTimeout(decorateMonth65,0);setTimeout(decorateMonth65,80);return r;};
+
+  /* Zeitstrahl: Urlaub an Samstag/Sonntag nicht markieren; Wochenende kann eigene Farbe bekommen. */
+  if(typeof renderSidebarTimelineRev050==='function'){
+    const prevSidebarTimeline65=renderSidebarTimelineRev050;
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){
+      const r=prevSidebarTimeline65.apply(this,arguments);
+      setTimeout(()=>{
+        const shown=addDays(new Date(new Date().setHours(0,0,0,0)),Number(state.timelineDayOffset||0));
+        const wrap=document.querySelector('#sidebarDayTimelineRev049 .timeline-canvas-wrap');
+        if(!wrap)return;
+        if(isWeekend65(shown)){
+          wrap.classList.remove('vacation-active');
+          if(state.weekendHighlight?.enabled){
+            wrap.classList.add('rev65-weekend-timeline');
+          }
+        }
+      },0);
+      return r;
+    };
+  }
+
+  function colorButton65(id,color,label){return `<button type="button" class="btn small rev65-color-button" id="${id}" title="${esc(label)}"><span class="rev65-color-dot" style="background:${esc(color)}"></span>🪣</button>`;}
+  function palette65(id,current){return `<div class="rev65-palette" id="${id}">${settingsColors65.map(c=>`<button type="button" class="color-choice" data-rev65-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}<input type="color" value="${esc(isHex(current)?current:'#64748b')}" data-rev65-input="1"></div>`;}
+  function bindPalette65(id,cb){const p=document.querySelector('#'+id);if(!p)return;p.querySelectorAll('[data-rev65-color]').forEach(b=>b.onclick=()=>cb(b.dataset.rev65Color));const i=p.querySelector('[data-rev65-input]');if(i)i.oninput=()=>cb(i.value);}
+  function togglePalette65(btn,pal){const b=document.querySelector('#'+btn),p=document.querySelector('#'+pal);if(b&&p)b.onclick=()=>p.classList.toggle('open');}
+  function draft65(){ensure65();return JSON.parse(JSON.stringify({theme:state.theme,cornerStyle:state.cornerStyle,outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',vacationHighlight:state.vacationHighlight,weekendHighlight:state.weekendHighlight,todayHighlight:state.todayHighlight||{borderWidth:4,borderColor:'#0284c7',opacity:0.18},syncInterval:state.syncInterval??15}));}
+
+  function openSettings65(){
+    ensure65();
+    const d=draft65();
+    let active='general';
+    $('#modalTitle').textContent='Allgemeine Einstellungen';
+    $('#modalContent').innerHTML=`<div class="settings-layout-rev56 rev65-settings"><div class="settings-tabs-rev56"><button class="settings-tab-rev56 active" data-rev65-tab="general" type="button">Allgemein</button><button class="settings-tab-rev56" data-rev65-tab="sync" type="button">Synchronisierung</button><button class="settings-tab-rev56" data-rev65-tab="info" type="button">Hinweise</button></div><div id="settingsTabContentRev65" class="settings-tab-content-rev53"></div></div>`;
+    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';
+    function readVisible(){
+      const q=s=>document.querySelector(s);
+      if(q('#mTheme65'))d.theme=q('#mTheme65').value;
+      if(q('#mCornerStyle65'))d.cornerStyle=q('#mCornerStyle65').value;
+      if(q('#mOutlineStyle65'))d.outlineStyle=q('#mOutlineStyle65').value;
+      if(q('#mVacationEnabled65'))d.vacationHighlight.enabled=q('#mVacationEnabled65').checked;
+      if(q('#mVacationOpacity65'))d.vacationHighlight.opacity=clamp(q('#mVacationOpacity65').value,0.05,0.55,0.18);
+      if(q('#mWeekendEnabled65'))d.weekendHighlight.enabled=q('#mWeekendEnabled65').checked;
+      if(q('#mWeekendOpacity65'))d.weekendHighlight.opacity=clamp(q('#mWeekendOpacity65').value,0.05,0.70,0.28);
+      if(q('#mTodayBorderWidth65'))d.todayHighlight.borderWidth=clamp(q('#mTodayBorderWidth65').value,1,10,4);
+      if(q('#mTodayOpacity65'))d.todayHighlight.opacity=clamp(q('#mTodayOpacity65').value,0,0.65,0.18);
+      if(q('#mSyncInterval65'))d.syncInterval=Number(q('#mSyncInterval65').value);
+    }
+    function renderGeneral(){
+      const root=$('#settingsTabContentRev65');if(!root)return;
+      root.innerHTML=`<div class="settings-grid">
+        <div class="rev65-card"><div class="rev65-card-title">Darstellung</div>
+          <div class="rev65-row"><label>Erscheinung</label><select id="mTheme65"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div>
+          <div class="rev65-row"><label>Kanten</label><select id="mCornerStyle65"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div>
+          <div class="rev65-row"><label>Konturfarbe</label><div class="rev65-inline"><select id="mOutlineStyle65"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Farbpalette</option></select>${colorButton65('mOutlineColorBtn65',d.outlineCustomColor,'Konturfarbe wählen')}</div></div>
+          ${palette65('mOutlinePalette65',d.outlineCustomColor)}
+        </div>
+        <div class="rev65-card"><label class="rev65-check"><span><b>Wochenenden anders anzeigen</b><small>Samstag und Sonntag erhalten eine eigene Hintergrundfarbe. Diese Markierung hat Vorrang vor Urlaub.</small></span><input id="mWeekendEnabled65" type="checkbox"></label>
+          <div class="rev65-row"><label>Wochenendfarbe</label><div>${colorButton65('mWeekendColorBtn65',d.weekendHighlight.color,'Wochenendfarbe wählen')}</div></div>
+          ${palette65('mWeekendPalette65',d.weekendHighlight.color)}
+          <div class="rev65-row"><label>Deckkraft</label><input id="mWeekendOpacity65" type="range" min="0.05" max="0.70" step="0.01" value="${esc(d.weekendHighlight.opacity)}"></div>
+        </div>
+        <div class="rev65-card"><label class="rev65-check"><span><b>Urlaubstage anders anzeigen</b><small>Ganztägige Termine mit exakt dem Titel „Urlaub“ markieren den Tag nur von Montag bis Freitag. Samstag und Sonntag zählen als Wochenende und werden nicht als Urlaubstag eingefärbt.</small></span><input id="mVacationEnabled65" type="checkbox"></label>
+          <div class="rev65-row"><label>Urlaubsfarbe</label><div>${colorButton65('mVacationColorBtn65',d.vacationHighlight.color,'Urlaubsfarbe wählen')}</div></div>
+          ${palette65('mVacationPalette65',d.vacationHighlight.color)}
+          <div class="rev65-row"><label>Deckkraft</label><input id="mVacationOpacity65" type="range" min="0.05" max="0.55" step="0.01" value="${esc(d.vacationHighlight.opacity)}"></div>
+        </div>
+        <div class="rev65-card"><div class="rev65-card-title">Aktueller Tag<small>Kontur und Füllung des heutigen Tages.</small></div>
+          <div class="rev65-row"><label>Linienstärke</label><input id="mTodayBorderWidth65" type="range" min="1" max="10" step="1" value="${esc(d.todayHighlight.borderWidth)}"></div>
+          <div class="rev65-row"><label>Linienfarbe</label><div>${colorButton65('mTodayBorderColorBtn65',d.todayHighlight.borderColor,'Linienfarbe wählen')}</div></div>
+          ${palette65('mTodayBorderPalette65',d.todayHighlight.borderColor)}
+          <div class="rev65-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity65" type="range" min="0" max="0.65" step="0.01" value="${esc(d.todayHighlight.opacity)}"></div>
+        </div>
+        <div class="hint">Speichern schreibt diese UI-Werte in den App-State. Fachliche Daten bleiben in ihren eigenen Tabellen.</div>
+      </div>`;
+      $('#mTheme65').value=d.theme||'light';$('#mCornerStyle65').value=d.cornerStyle||'rounded';$('#mOutlineStyle65').value=d.outlineStyle||'current';
+      $('#mVacationEnabled65').checked=!!d.vacationHighlight.enabled;$('#mWeekendEnabled65').checked=!!d.weekendHighlight.enabled;
+      togglePalette65('mOutlineColorBtn65','mOutlinePalette65');togglePalette65('mVacationColorBtn65','mVacationPalette65');togglePalette65('mWeekendColorBtn65','mWeekendPalette65');togglePalette65('mTodayBorderColorBtn65','mTodayBorderPalette65');
+      bindPalette65('mOutlinePalette65',c=>{readVisible();d.outlineStyle='custom';d.outlineCustomColor=c;renderGeneral();});
+      bindPalette65('mVacationPalette65',c=>{readVisible();d.vacationHighlight.color=c;renderGeneral();});
+      bindPalette65('mWeekendPalette65',c=>{readVisible();d.weekendHighlight.color=c;renderGeneral();});
+      bindPalette65('mTodayBorderPalette65',c=>{readVisible();d.todayHighlight.borderColor=c;renderGeneral();});
+    }
+    function renderSync(){
+      const root=$('#settingsTabContentRev65');if(!root)return;
+      root.innerHTML=`<div class="settings-grid"><div class="rev65-card"><div class="rev65-card-title">Synchronisierung</div><div class="rev65-row"><label>Intervall</label><select id="mSyncInterval65"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><div class="hint">Der obere grüne Reload-Button lädt Daten manuell neu.</div></div></div>`;
+      $('#mSyncInterval65').value=String(d.syncInterval??15);
+    }
+    function renderInfo(){
+      const root=$('#settingsTabContentRev65');if(!root)return;
+      root.innerHTML=`<div class="settings-grid">
+        <div class="security-note"><b>Urlaubslogik</b><br>Urlaub wird nur erkannt, wenn ein sichtbarer ganztägiger Termin exakt „Urlaub“ heißt. Samstag und Sonntag werden ausdrücklich ausgeschlossen und gelten immer als Wochenende.</div>
+        <div class="security-note"><b>Wochenendlogik</b><br>Die Wochenendfarbe gilt für Samstag und Sonntag. Ist gleichzeitig ein Urlaubstermin eingetragen, bleibt die Wochenenddarstellung maßgeblich.</div>
+        <div class="security-note"><b>Task ohne Titel</b><br>Wird beim Erstellen eines Tagestasks kein Titel eingetragen, speichert die App ihn automatisch unter „Aufgabe“. Notizen bleiben erhalten.</div>
+        <div class="security-note"><b>Speicherprotokoll</b><br>Anzeigeparameter werden im <code>app_state</code> gespeichert. Tasks, Termine, Kalenderquellen und Projekte bleiben in ihren eigenen Tabellen.</div>
+      </div>`;
+    }
+    function renderActive(){if(active==='general')renderGeneral();else if(active==='sync')renderSync();else renderInfo();}
+    renderActive();
+    document.querySelectorAll('[data-rev65-tab]').forEach(btn=>btn.onclick=()=>{readVisible();active=btn.dataset.rev65Tab;document.querySelectorAll('[data-rev65-tab]').forEach(b=>b.classList.toggle('active',b===btn));renderActive();});
+    $('#saveModal').onclick=async()=>{
+      readVisible();
+      state.theme=d.theme||'light';state.cornerStyle=d.cornerStyle||'rounded';state.outlineStyle=d.outlineStyle||'current';state.outlineCustomColor=d.outlineCustomColor;
+      state.vacationHighlight=Object.assign({},d.vacationHighlight);state.weekendHighlight=Object.assign({},d.weekendHighlight);state.todayHighlight=Object.assign({},d.todayHighlight);state.syncInterval=Number(d.syncInterval??15);
+      ensure65();if(typeof setupAutoSync==='function')setupAutoSync();if(typeof applyAppearance==='function')applyAppearance();
+      const ok=await saveAppState65();closeModal();render();toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');
+    };
+    const cancel=$('#cancelModal'); if(cancel)cancel.style.display='';
+  }
+
+  window.openSyncSettingsModal=openSettings65;
+  window.openSettingsRev56=openSettings65;
+  setTimeout(()=>{const s=$('#settingsBtn');if(s)s.onclick=openSettings65;ensure65();applyAppearance();},100);
+
+  const style=document.createElement('style');
+  style.textContent=`
+    .rev65-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827;}
+    .rev65-card-title{font-weight:1000;color:#111827;display:block;}.rev65-card-title small,.rev65-check small{display:block;color:#475569;font-weight:600;line-height:1.35;margin-top:3px;}
+    .rev65-row{display:grid;grid-template-columns:minmax(145px,210px) minmax(0,1fr);gap:10px;align-items:center;}.rev65-row label{font-weight:800;color:#111827;font-size:13px;}.rev65-row input,.rev65-row select{min-width:0;}
+    .rev65-inline{display:flex;gap:8px;align-items:center;}.rev65-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;}.rev65-check b{color:#111827;font-weight:1000;}
+    .rev65-color-button{height:40px!important;min-width:46px!important;border-radius:12px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;}.rev65-color-dot{width:18px;height:18px;border-radius:6px;border:1px solid rgba(0,0,0,.25);display:inline-block;}
+    .rev65-palette{display:none;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:8px;margin-top:8px;}.rev65-palette.open{display:grid;}.rev65-palette input[type="color"]{height:34px;padding:2px;border-radius:9px;}
+    .rev65-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#0b1221!important;}
+    body.light .rev65-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    .month-cell.rev65-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#070d1a!important;}
+    body.light .month-cell.rev65-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev65-weekend-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#050a16!important;}
+    body.light #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev65-weekend-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev65WeekendColor) var(--rev65WeekendOpacityPercent),transparent)),#fff!important;}
+    @media(max-width:700px){.rev65-row{grid-template-columns:1fr;gap:5px;}}
+  `;
+  document.head.appendChild(style);
+})();
+
+/* Rev 066: stabile Nachbesserung Monolith
+   - Wochenendeinstellung vollständig in Settings
+   - Urlaub nur Mo-Fr, Hinweistext ergänzt
+   - Hinweise-Reiter mit Inhalt
+   - Task-Erstellung ohne Titel für Tages-, Langzeit- und Projekt-Tasks
+   - Enter speichert, Shift+Enter erzeugt Zeilenumbruch
+   - alte Löschbuttons werden beim Modalwechsel konsequent entfernt
+*/
+(function(){
+  const REV66_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
+  const REV66_VAC_DEFAULT={enabled:false,color:'#f97316',opacity:0.18};
+  const COLORS66=['#e2e8f0','#f8fafc','#cbd5e1','#64748b','#111827','#000000','#ffffff','#0284c7','#38bdf8','#7c5cff','#a855f7','#22c55e','#14b8a6','#ffb020','#f97316','#ff5050','#ec4899'];
+  const esc66=v=>escapeHtml(String(v??''));
+  const isHex66=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
+  const clamp66=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
+  const isWeekend66=d=>{const x=new Date(d).getDay();return x===0||x===6;}; // 0 = Sonntag, 6 = Samstag
+  const defaultTitle66='Aufgabe';
+
+  function ensure66(){
+    state.vacationHighlight=Object.assign({},REV66_VAC_DEFAULT,state.vacationHighlight||{});
+    state.weekendHighlight=Object.assign({},REV66_WEEKEND_DEFAULT,state.weekendHighlight||{});
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.color=isHex66(state.vacationHighlight.color)?state.vacationHighlight.color:REV66_VAC_DEFAULT.color;
+    state.weekendHighlight.color=isHex66(state.weekendHighlight.color)?state.weekendHighlight.color:REV66_WEEKEND_DEFAULT.color;
+    state.vacationHighlight.opacity=clamp66(state.vacationHighlight.opacity,0.05,0.55,REV66_VAC_DEFAULT.opacity);
+    state.weekendHighlight.opacity=clamp66(state.weekendHighlight.opacity,0.05,0.70,REV66_WEEKEND_DEFAULT.opacity);
+  }
+
+  const prevEnsure66=ensureSettings;
+  ensureSettings=function(){prevEnsure66();ensure66();};
+
+  const prevApply66=applyAppearance;
+  applyAppearance=function(){
+    prevApply66();ensure66();
+    document.documentElement.style.setProperty('--rev66WeekendColor',state.weekendHighlight.color);
+    document.documentElement.style.setProperty('--rev66WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');
+    document.documentElement.style.setProperty('--rev66VacationColor',state.vacationHighlight.color);
+    document.documentElement.style.setProperty('--rev66VacationOpacityPercent',Math.round(state.vacationHighlight.opacity*100)+'%');
+  };
+
+  function cleanModalDeleteButtons66(allowOwnDelete=false){
+    const selectors=[
+      '.modal-actions .rev62-delete-left','.modal-actions .rev61-trash-left','.modal-actions .rev58-own-trash',
+      '.modal-actions .rev57-trash-left','.modal-actions .own-delete-square56','.modal-actions #rev58DeleteOwnEvent',
+      '.modal-actions #deleteOwnFromEditRev51','.modal-actions #deleteOwnEvent','.modal-actions #deleteModeBtnAction',
+      '.modal-actions .mode-delete-action','.modal-actions .rev66-stale-delete'
+    ];
+    document.querySelectorAll(selectors.join(',')).forEach(btn=>{
+      if(allowOwnDelete && (btn.id==='deleteOwnFromEditRev51'||btn.id==='deleteOwnEvent'||btn.classList.contains('own-delete-square56')))return;
+      btn.remove();
+    });
+    if(!allowOwnDelete){
+      document.querySelectorAll('#modalContent #deleteOwnFromEditRev51,#modalContent #deleteOwnEvent').forEach(btn=>btn.remove());
+    }
+  }
+
+  const prevOpenModal66=openModal;
+  openModal=function(title,html,onSave){
+    cleanModalDeleteButtons66(false);
+    const wrapped=()=>{ cleanModalDeleteButtons66(false); return onSave&&onSave(); };
+    const result=prevOpenModal66(title,html,wrapped);
+    cleanModalDeleteButtons66(false);
+    return result;
+  };
+
+  const prevCloseModal66=closeModal;
+  closeModal=function(){cleanModalDeleteButtons66(false);return prevCloseModal66.apply(this,arguments);};
+
+  function bindEnterSave66(rootSelector){
+    setTimeout(()=>{
+      const root=document.querySelector(rootSelector)||document.querySelector('#modalContent');
+      if(!root)return;
+      root.querySelectorAll('textarea,input,select').forEach(el=>{
+        if(el.dataset.rev66EnterBound)return;
+        el.dataset.rev66EnterBound='1';
+        el.addEventListener('keydown',ev=>{
+          if(ev.key!=='Enter')return;
+          if(ev.shiftKey)return; // Shift+Enter bleibt Zeilenumbruch im Textfeld
+          ev.preventDefault();
+          document.querySelector('#saveModal')?.click();
+        });
+      });
+    },0);
+  }
+
+  function titleOrFallback66(value){return String(value||'').trim()||defaultTitle66;}
+
+  window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
+    if(!requireLogin())return;ensureSettings();
+    openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Wenn nur eine Notiz eingetragen wird, speichert die App den Task als „Aufgabe“. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,()=>{
+      const title=titleOrFallback66($('#mTitle')?.value);
+      const note=($('#mNote')?.value||'').trim();
+      state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate')?.value||date,done:false,note,columnId:$('#mTaskColumn')?.value});
+    });
+    bindEnterSave66('#modalContent');
+  };
+
+  window.openLongModal=openLongModal=function(){
+    if(!requireLogin())return;
+    if(typeof ensureRev033State==='function')ensureRev033State();
+    const groups=state.longColumns&&state.longColumns.length?state.longColumns:[{id:'long_default',name:'Allgemein'}];
+    openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><select id="mLongColumn">${groups.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><textarea id="mNote" rows="3" placeholder="Notiz"></textarea><div class="hint">Kein Titel nötig: Wenn nur eine Notiz eingetragen wird, speichert die App den Task als „Aufgabe“. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const title=titleOrFallback66($('#mTitle')?.value);
+      const note=($('#mNote')?.value||'').trim();
+      const selectedGroup=$('#mLongColumn')?.value||groups[0]?.id||'long_default';
+      try{
+        if(typeof insertLongTaskRev043==='function'){
+          const saved=await insertLongTaskRev043({title,done:false,note,columnId:selectedGroup});
+          state.longterm.push(saved);
+        }else{
+          state.longterm.push({id:crypto.randomUUID(),title,done:false,note,createdDate:fmtDate(new Date()),completedDate:null,columnId:selectedGroup});
+        }
+        render();toast('Langfristiger Task gespeichert.');
+      }catch(error){toast('Langfristiger Task konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+    bindEnterSave66('#modalContent');
+  };
+
+  window.openProjectTaskModalRev047=openProjectTaskModalRev047=function(projectId){
+    if(!requireLogin())return;
+    const p=typeof projectByIdRev047==='function'?projectByIdRev047(projectId):null;
+    if(!p)return toast('Projekt nicht gefunden.');
+    openModal(`Projekt-Task hinzufügen · ${escapeHtml(p.name)}`,`<input id="mProjectTaskTitle" placeholder="Aufgabe"><input id="mProjectTaskDue" type="date"><textarea id="mProjectTaskNote" rows="4" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Wenn nur eine Notiz eingetragen wird, speichert die App den Projekt-Task als „Aufgabe“. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const title=titleOrFallback66($('#mProjectTaskTitle')?.value);
+      const note=($('#mProjectTaskNote')?.value||'').trim();
+      try{
+        const saved=await insertProjectTaskRev047({projectId,title,dueDate:$('#mProjectTaskDue')?.value||null,note,done:false});
+        state.projectTasks.push(saved);render();toast('Projekt-Task gespeichert.');
+      }catch(error){toast('Projekt-Task konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+    bindEnterSave66('#modalContent');
+  };
+
+  // Detail-Editor: leerer Titel wird ebenfalls auf „Aufgabe“ gesetzt, nicht auf alten Titel zurückgeworfen.
+  if(typeof openProjectTaskDetailModalRev047==='function'){
+    const prevProjectTaskDetail66=openProjectTaskDetailModalRev047;
+    window.openProjectTaskDetailModalRev047=openProjectTaskDetailModalRev047=function(id){
+      const r=prevProjectTaskDetail66.apply(this,arguments);
+      setTimeout(()=>{
+        bindEnterSave66('#modalContent');
+        const save=document.querySelector('#saveModal');
+        if(save && !save.dataset.rev66ProjectDetailPatch){
+          save.dataset.rev66ProjectDetailPatch='1';
+          const oldClick=save.onclick;
+          save.onclick=async function(ev){
+            const titleInput=document.querySelector('#editProjectTaskTitle');
+            if(titleInput && !titleInput.value.trim())titleInput.value=defaultTitle66;
+            return oldClick&&oldClick.call(this,ev);
+          };
+        }
+      },0);
+      return r;
+    };
+  }
+
+  function allVisibleEventsForDay66(day){
+    try{
+      return visibleCalendars().flatMap(({cal})=>{
+        const links=cal.links||[];
+        const ics=(cal.events||[]).map(e=>eventOccurrenceForDate(e,day)).filter(e=>{
+          if(!e)return false;const l=links.find(x=>x.id===e.icsId);return !l||l.visible!==false;
+        });
+        const own=(cal.ownEvents||[]).map(e=>eventOccurrenceForDate(e,day)).filter(e=>{
+          if(!e)return false;const l=links.find(x=>x.id===e.sourceId);return !l||l.visible!==false;
+        });
+        return [...ics,...own];
+      });
+    }catch(e){return [];}
+  }
+
+  function dayHasVacation66(day){
+    ensure66();
+    if(!state.vacationHighlight.enabled)return false;
+    if(isWeekend66(day))return false; // zentrale Bedingung: Samstag/Sonntag sind nie Urlaubshighlight
+    return allVisibleEventsForDay66(day).some(e=>!!(e&&e.allDay&&String(e.summary||'').trim().toLowerCase()==='urlaub'));
+  }
+
+  function decorateDayNode66(node,date){
+    ensure66();
+    const weekend=isWeekend66(date);
+    node.classList.toggle('rev66-weekend-day',!!(weekend&&state.weekendHighlight.enabled));
+    node.classList.toggle('vacation-day-rev52',!!(!weekend&&dayHasVacation66(date)));
+    node.classList.toggle('rev66-vacation-day',!!(!weekend&&dayHasVacation66(date)));
+  }
+
+  const prevDayCard66=dayCard;
+  dayCard=function(date){
+    const node=prevDayCard66(date);
+    decorateDayNode66(node,date);
+    cleanModalDeleteButtons66(false);
+    return node;
+  };
+
+  function decorateMonth66(){
+    ensure66();
+    document.querySelectorAll('[data-month-date]').forEach(cell=>{
+      const d=new Date(cell.dataset.monthDate+'T00:00:00');
+      const weekend=isWeekend66(d);
+      cell.classList.toggle('rev66-weekend-cell',!!(weekend&&state.weekendHighlight.enabled));
+      cell.classList.toggle('vacation-day-rev52',!!(!weekend&&dayHasVacation66(d)));
+      cell.classList.toggle('rev66-vacation-cell',!!(!weekend&&dayHasVacation66(d)));
+    });
+  }
+
+  const prevRenderMonth66=window.renderMonthView||renderMonthView;
+  window.renderMonthView=renderMonthView=function(){const r=prevRenderMonth66.apply(this,arguments);setTimeout(decorateMonth66,0);return r;};
+  const prevOpenMonth66=window.openMonthModal||openMonthModal;
+  window.openMonthModal=openMonthModal=function(){cleanModalDeleteButtons66(false);const r=prevOpenMonth66.apply(this,arguments);setTimeout(()=>{cleanModalDeleteButtons66(false);decorateMonth66();},0);return r;};
+
+  // Kalendereinträge dürfen keine alten Task-Löschbuttons übernehmen.
+  if(typeof openEventDetailModal==='function'){
+    const prevEventDetail66=openEventDetailModal;
+    window.openEventDetailModal=openEventDetailModal=function(ref){
+      cleanModalDeleteButtons66(false);
+      const r=prevEventDetail66.apply(this,arguments);
+      const type=String(ref||'').split(':')[0];
+      setTimeout(()=>{
+        // Bei normalem ICS-Termin immer löschen; bei eigenem Termin nur die vom Event-Editor sauber erzeugten Controls zulassen.
+        cleanModalDeleteButtons66(type==='own');
+        const title=document.querySelector('#modalTitle')?.textContent||'';
+        if(!/Eigenen Termin bearbeiten/i.test(title) && !/Eigener Termin/i.test(title))cleanModalDeleteButtons66(false);
+      },0);
+      return r;
+    };
+  }
+
+  function colorButton66(id,color,label){return `<button type="button" class="btn small rev66-color-button" id="${id}" title="${esc66(label)}"><span class="rev66-color-dot" style="background:${esc66(color)}"></span>🎨</button>`;}
+  function palette66(id,current){return `<div class="rev66-palette" id="${id}">${COLORS66.map(c=>`<button type="button" class="color-choice" data-rev66-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}<input type="color" value="${esc66(isHex66(current)?current:'#64748b')}" data-rev66-input="1"></div>`;}
+  function bindPalette66(id,cb){const p=document.querySelector('#'+id);if(!p)return;p.querySelectorAll('[data-rev66-color]').forEach(b=>b.onclick=()=>cb(b.dataset.rev66Color));const i=p.querySelector('[data-rev66-input]');if(i)i.oninput=()=>cb(i.value);}
+  function togglePalette66(btn,pal){const b=document.querySelector('#'+btn),p=document.querySelector('#'+pal);if(b&&p)b.onclick=()=>p.classList.toggle('open');}
+  function draft66(){ensure66();return JSON.parse(JSON.stringify({theme:state.theme||'light',cornerStyle:state.cornerStyle||'rounded',outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',vacationHighlight:state.vacationHighlight,weekendHighlight:state.weekendHighlight,todayHighlight:state.todayHighlight||{borderWidth:4,borderColor:'#0284c7',opacity:0.18},syncInterval:state.syncInterval??15}));}
+
+  async function saveAppState66(){
+    ensure66();
+    try{localStorage.setItem(storeKey,JSON.stringify(stripRuntimeICSCache(state)));}catch(e){}
+    try{persist();}catch(e){}
+    if(currentUser){
+      try{
+        clearTimeout(cloudSaveTimer);
+        const payload={user_id:currentUser.id,state:stripRuntimeICSCache(state),updated_at:new Date().toISOString()};
+        const {error}=await supabaseClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+        if(error){toast('App-State konnte nicht gespeichert werden: '+error.message);return false;}
+        if(typeof setCloudStatus==='function')setCloudStatus('App-State gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),'ok');
+      }catch(e){toast('App-State konnte nicht gespeichert werden: '+(e.message||e));return false;}
+    }
+    return true;
+  }
+
+  function openSettings66(){
+    ensure66();cleanModalDeleteButtons66(false);
+    const d=draft66();
+    let active='general';
+    document.querySelector('#modalTitle').textContent='Allgemeine Einstellungen';
+    document.querySelector('#modalContent').innerHTML=`<div class="settings-layout-rev56 rev66-settings"><div class="settings-tabs-rev56"><button class="settings-tab-rev56 active" data-rev66-tab="general" type="button">Allgemein</button><button class="settings-tab-rev56" data-rev66-tab="sync" type="button">Synchronisierung</button><button class="settings-tab-rev56" data-rev66-tab="info" type="button">Hinweise</button></div><div id="settingsTabContentRev66" class="settings-tab-content-rev53"></div></div>`;
+    document.querySelector('#modalBackdrop').style.display='flex';
+    document.querySelector('#saveModal').style.display='';
+    cleanModalDeleteButtons66(false);
+
+    function readVisible(){
+      const q=s=>document.querySelector(s);
+      if(q('#mTheme66'))d.theme=q('#mTheme66').value;
+      if(q('#mCornerStyle66'))d.cornerStyle=q('#mCornerStyle66').value;
+      if(q('#mOutlineStyle66'))d.outlineStyle=q('#mOutlineStyle66').value;
+      if(q('#mVacationEnabled66'))d.vacationHighlight.enabled=q('#mVacationEnabled66').checked;
+      if(q('#mVacationOpacity66'))d.vacationHighlight.opacity=clamp66(q('#mVacationOpacity66').value,0.05,0.55,0.18);
+      if(q('#mWeekendEnabled66'))d.weekendHighlight.enabled=q('#mWeekendEnabled66').checked;
+      if(q('#mWeekendOpacity66'))d.weekendHighlight.opacity=clamp66(q('#mWeekendOpacity66').value,0.05,0.70,0.28);
+      if(q('#mTodayBorderWidth66'))d.todayHighlight.borderWidth=clamp66(q('#mTodayBorderWidth66').value,1,10,4);
+      if(q('#mTodayOpacity66'))d.todayHighlight.opacity=clamp66(q('#mTodayOpacity66').value,0,0.65,0.18);
+      if(q('#mSyncInterval66'))d.syncInterval=Number(q('#mSyncInterval66').value);
+    }
+    function renderGeneral(){
+      const root=document.querySelector('#settingsTabContentRev66');if(!root)return;
+      root.innerHTML=`<div class="settings-grid">
+        <div class="rev66-card"><div class="rev66-card-title">Darstellung</div>
+          <div class="rev66-row"><label>Erscheinung</label><select id="mTheme66"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div>
+          <div class="rev66-row"><label>Kanten</label><select id="mCornerStyle66"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div>
+          <div class="rev66-row"><label>Konturfarbe</label><div class="rev66-inline"><select id="mOutlineStyle66"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Farbpalette</option></select>${colorButton66('mOutlineColorBtn66',d.outlineCustomColor,'Konturfarbe wählen')}</div></div>
+          ${palette66('mOutlinePalette66',d.outlineCustomColor)}
+        </div>
+        <div class="rev66-card"><label class="rev66-check"><span><b>Wochenenden anders anzeigen</b><small>Samstag und Sonntag zählen als Wochenende. Bei aktivierter Option erhalten beide Tage eine eigene Hintergrundfarbe.</small></span><input id="mWeekendEnabled66" type="checkbox"></label>
+          <div class="rev66-row"><label>Wochenendfarbe</label><div>${colorButton66('mWeekendColorBtn66',d.weekendHighlight.color,'Wochenendfarbe wählen')}</div></div>
+          ${palette66('mWeekendPalette66',d.weekendHighlight.color)}
+          <div class="rev66-row"><label>Deckkraft</label><input id="mWeekendOpacity66" type="range" min="0.05" max="0.70" step="0.01" value="${esc66(d.weekendHighlight.opacity)}"></div>
+        </div>
+        <div class="rev66-card"><label class="rev66-check"><span><b>Urlaubstage anders anzeigen</b><small>Wenn ein sichtbarer ICS- oder eigener Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält, wird der gesamte Tag farblich hinterlegt. Bedingung: Der Tag darf kein Wochenendtag sein; Samstag und Sonntag sind ausgeschlossen.</small></span><input id="mVacationEnabled66" type="checkbox"></label>
+          <div class="rev66-row"><label>Urlaubsfarbe</label><div>${colorButton66('mVacationColorBtn66',d.vacationHighlight.color,'Urlaubsfarbe wählen')}</div></div>
+          ${palette66('mVacationPalette66',d.vacationHighlight.color)}
+          <div class="rev66-row"><label>Deckkraft</label><input id="mVacationOpacity66" type="range" min="0.05" max="0.55" step="0.01" value="${esc66(d.vacationHighlight.opacity)}"></div>
+        </div>
+        <div class="rev66-card"><div class="rev66-card-title">Aktueller Tag<small>Kontur und Füllung des heutigen Tages.</small></div>
+          <div class="rev66-row"><label>Linienstärke</label><input id="mTodayBorderWidth66" type="range" min="1" max="10" step="1" value="${esc66(d.todayHighlight.borderWidth)}"></div>
+          <div class="rev66-row"><label>Linienfarbe</label><div>${colorButton66('mTodayBorderColorBtn66',d.todayHighlight.borderColor,'Linienfarbe wählen')}</div></div>
+          ${palette66('mTodayBorderPalette66',d.todayHighlight.borderColor)}
+          <div class="rev66-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity66" type="range" min="0" max="0.65" step="0.01" value="${esc66(d.todayHighlight.opacity)}"></div>
+        </div>
+      </div>`;
+      document.querySelector('#mTheme66').value=d.theme||'light';
+      document.querySelector('#mCornerStyle66').value=d.cornerStyle||'rounded';
+      document.querySelector('#mOutlineStyle66').value=d.outlineStyle||'current';
+      document.querySelector('#mVacationEnabled66').checked=!!d.vacationHighlight.enabled;
+      document.querySelector('#mWeekendEnabled66').checked=!!d.weekendHighlight.enabled;
+      togglePalette66('mOutlineColorBtn66','mOutlinePalette66');togglePalette66('mVacationColorBtn66','mVacationPalette66');togglePalette66('mWeekendColorBtn66','mWeekendPalette66');togglePalette66('mTodayBorderColorBtn66','mTodayBorderPalette66');
+      bindPalette66('mOutlinePalette66',c=>{readVisible();d.outlineStyle='custom';d.outlineCustomColor=c;renderGeneral();});
+      bindPalette66('mVacationPalette66',c=>{readVisible();d.vacationHighlight.color=c;renderGeneral();});
+      bindPalette66('mWeekendPalette66',c=>{readVisible();d.weekendHighlight.color=c;renderGeneral();});
+      bindPalette66('mTodayBorderPalette66',c=>{readVisible();d.todayHighlight.borderColor=c;renderGeneral();});
+    }
+    function renderSync(){
+      const root=document.querySelector('#settingsTabContentRev66');if(!root)return;
+      root.innerHTML=`<div class="settings-grid"><div class="rev66-card"><div class="rev66-card-title">Synchronisierung</div><div class="rev66-row"><label>Intervall</label><select id="mSyncInterval66"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><div class="hint">Der obere grüne Reload-Button lädt Daten manuell neu.</div></div></div>`;
+      document.querySelector('#mSyncInterval66').value=String(d.syncInterval??15);
+    }
+    function renderInfo(){
+      const root=document.querySelector('#settingsTabContentRev66');if(!root)return;
+      root.innerHTML=`<div class="settings-grid">
+        <div class="security-note"><b>Hinweise zur Urlaubslogik</b><br>Urlaub wird nur erkannt, wenn ein sichtbarer ICS- oder eigener Kalender einen ganztägigen Termin mit exakt dem Titel „Urlaub“ enthält. Samstag und Sonntag sind ausgeschlossen und werden nicht als Urlaubstag eingefärbt.</div>
+        <div class="security-note"><b>Hinweise zur Wochenendlogik</b><br>Samstag und Sonntag zählen immer als Wochenende. Die Wochenendfarbe kann separat aktiviert, farblich gewählt und über die Deckkraft geregelt werden.</div>
+        <div class="security-note"><b>Hinweise zur Task-Erstellung</b><br>Tagestasks, langfristige Tasks und Projekt-Tasks können ohne Titel gespeichert werden. Wenn nur eine Notiz vorhanden ist, wird automatisch „Aufgabe“ als Titel gesetzt. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>
+        <div class="security-note"><b>Hinweise zum Modalwechsel</b><br>Beim Öffnen eines Kalendertermins werden alte Task-Löschaktionen entfernt, damit nicht versehentlich ein vorher angeklickter Task gelöscht wird.</div>
+        <div class="security-note"><b>Speicherlogik</b><br>Darstellungsoptionen werden im App-State gespeichert. Fachliche Daten wie Kalenderquellen, Termine, Tasks und Projekte bleiben in ihren eigenen Tabellen.</div>
+      </div>`;
+    }
+    function renderActive(){if(active==='general')renderGeneral();else if(active==='sync')renderSync();else renderInfo();}
+    renderActive();
+    document.querySelectorAll('[data-rev66-tab]').forEach(btn=>btn.onclick=()=>{readVisible();active=btn.dataset.rev66Tab;document.querySelectorAll('[data-rev66-tab]').forEach(b=>b.classList.toggle('active',b===btn));renderActive();});
+    document.querySelector('#saveModal').onclick=async()=>{
+      readVisible();
+      state.theme=d.theme||'light';state.cornerStyle=d.cornerStyle||'rounded';state.outlineStyle=d.outlineStyle||'current';state.outlineCustomColor=d.outlineCustomColor;
+      state.vacationHighlight=Object.assign({},REV66_VAC_DEFAULT,d.vacationHighlight||{});
+      state.weekendHighlight=Object.assign({},REV66_WEEKEND_DEFAULT,d.weekendHighlight||{});
+      state.todayHighlight=Object.assign({},d.todayHighlight||{});
+      state.syncInterval=Number(d.syncInterval??15);
+      ensure66();if(typeof setupAutoSync==='function')setupAutoSync();if(typeof applyAppearance==='function')applyAppearance();
+      const ok=await saveAppState66();closeModal();render();toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');
+    };
+    document.querySelector('#cancelModal').style.display='';
+  }
+
+  window.openSyncSettingsModal=openSyncSettingsModal=openSettings66;
+  setTimeout(()=>{const b=document.querySelector('#settingsBtn');if(b)b.onclick=openSettings66;ensure66();applyAppearance();cleanModalDeleteButtons66(false);},50);
+  setTimeout(()=>{const b=document.querySelector('#settingsBtn');if(b)b.onclick=openSettings66;},600);
+
+  const css=document.createElement('style');
+  css.textContent=`
+    .rev66-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827;}
+    .rev66-card-title{font-weight:1000;color:#111827;display:block;}.rev66-card-title small,.rev66-check small{display:block;color:#475569;font-weight:600;line-height:1.35;margin-top:3px;}
+    .rev66-row{display:grid;grid-template-columns:minmax(145px,220px) minmax(0,1fr);gap:10px;align-items:center;}.rev66-row label{font-weight:800;color:#111827;font-size:13px;}.rev66-row input,.rev66-row select{min-width:0;}
+    .rev66-inline{display:flex;gap:8px;align-items:center;}.rev66-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;}.rev66-check b{color:#111827;font-weight:1000;}
+    .rev66-color-button{height:40px!important;min-width:46px!important;border-radius:12px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;}.rev66-color-dot{width:18px;height:18px;border-radius:6px;border:1px solid rgba(0,0,0,.25);display:inline-block;}
+    .rev66-palette{display:none;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:8px;margin-top:8px;}.rev66-palette.open{display:grid;}.rev66-palette input[type="color"]{height:34px;padding:2px;border-radius:9px;}
+    .rev66-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent)),#0b1221!important;}
+    body.light .rev66-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    .month-cell.rev66-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent)),#070d1a!important;}
+    body.light .month-cell.rev66-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev66WeekendColor) var(--rev66WeekendOpacityPercent),transparent)),#f8fbff!important;}
+    .rev66-vacation-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent)),#0b1221!important;}
+    body.light .rev66-vacation-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent)),#f8fbff!important;}
+    .month-cell.rev66-vacation-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent)),#070d1a!important;}
+    body.light .month-cell.rev66-vacation-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev66VacationColor) var(--rev66VacationOpacityPercent),transparent)),#f8fbff!important;}
+    .modal-actions .rev66-hidden-stale-delete{display:none!important;}
+    @media(max-width:700px){.rev66-row{grid-template-columns:1fr;gap:5px;}}
+  `;
+  document.head.appendChild(css);
+})();
+
+/* Rev 068: finaler Override - Wochenendeinstellungen sichtbar, Hinweise sichtbar, Task-Enter-Logik, sichere Modal-Löschbuttons */
+(function(){
+  const REV68_WEEKEND={enabled:false,color:'#e2e8f0',opacity:0.28};
+  const REV68_VAC={enabled:false,color:'#f97316',opacity:0.18};
+  const REV68_TODAY={borderWidth:4,borderColor:'#0284c7',opacity:0.18};
+  const colors68=['#64748b','#000000','#ffffff','#0284c7','#7c5cff','#22c55e','#ffb020','#f97316','#ff5050','#ec4899','#14b8a6','#a855f7','#e2e8f0','#f8fafc','#fde68a','#fed7aa'];
+  const isHex68=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
+  const clamp68=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
+  const esc68=v=>escapeHtml(String(v??''));
+  const isWeekend68=d=>{const x=new Date(d).getDay();return x===0||x===6;};
+  function ensure68(){
+    state.vacationHighlight=Object.assign({},REV68_VAC,state.vacationHighlight||{});
+    state.weekendHighlight=Object.assign({},REV68_WEEKEND,state.weekendHighlight||{});
+    state.todayHighlight=Object.assign({},REV68_TODAY,state.todayHighlight||{});
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.color=isHex68(state.vacationHighlight.color)?state.vacationHighlight.color:REV68_VAC.color;
+    state.weekendHighlight.color=isHex68(state.weekendHighlight.color)?state.weekendHighlight.color:REV68_WEEKEND.color;
+    state.todayHighlight.borderColor=isHex68(state.todayHighlight.borderColor)?state.todayHighlight.borderColor:REV68_TODAY.borderColor;
+    state.vacationHighlight.opacity=clamp68(state.vacationHighlight.opacity,0.05,0.55,REV68_VAC.opacity);
+    state.weekendHighlight.opacity=clamp68(state.weekendHighlight.opacity,0.05,0.70,REV68_WEEKEND.opacity);
+    state.todayHighlight.borderWidth=clamp68(state.todayHighlight.borderWidth,1,10,REV68_TODAY.borderWidth);
+    state.todayHighlight.opacity=clamp68(state.todayHighlight.opacity,0,0.65,REV68_TODAY.opacity);
+  }
+  function setVars68(){
+    ensure68();
+    document.documentElement.style.setProperty('--rev68WeekendColor',state.weekendHighlight.color);
+    document.documentElement.style.setProperty('--rev68WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');
+    document.documentElement.style.setProperty('--rev68VacationColor',state.vacationHighlight.color);
+    document.documentElement.style.setProperty('--rev68VacationOpacityPercent',Math.round(state.vacationHighlight.opacity*100)+'%');
+  }
+  const prevEnsure68=ensureSettings;
+  ensureSettings=function(){prevEnsure68();ensure68();};
+  const prevApply68=applyAppearance;
+  applyAppearance=function(){prevApply68();setVars68();};
+
+  // app_state enthält ab dieser Revision auch die Wochenend-Einstellungen.
+  const oldUiStateOnly68=typeof uiStateOnly==='function'?uiStateOnly:null;
+  if(oldUiStateOnly68){
+    uiStateOnly=function(){
+      ensure68();
+      const ui=oldUiStateOnly68();
+      return Object.assign({},ui,{
+        weekendHighlight:JSON.parse(JSON.stringify(state.weekendHighlight)),
+        vacationHighlight:JSON.parse(JSON.stringify(state.vacationHighlight)),
+        todayHighlight:JSON.parse(JSON.stringify(state.todayHighlight)),
+        outlineStyle:state.outlineStyle,
+        outlineCustomColor:state.outlineCustomColor,
+        theme:state.theme,
+        cornerStyle:state.cornerStyle,
+        syncInterval:state.syncInterval
+      });
+    };
+  }
+  const oldApplyUiState68=typeof applyUiState==='function'?applyUiState:null;
+  if(oldApplyUiState68){
+    applyUiState=function(ui){
+      oldApplyUiState68(ui);
+      if(ui&&ui.weekendHighlight!==undefined)state.weekendHighlight=Object.assign({},REV68_WEEKEND,ui.weekendHighlight||{});
+      ensure68();
+    };
+  }
+  async function saveSettings68(){
+    ensure68();
+    try{localStorage.setItem(storeKey,JSON.stringify(typeof uiStateOnly==='function'?uiStateOnly():stripRuntimeICSCache(state)));}catch(e){}
+    if(currentUser){
+      clearTimeout(cloudSaveTimer);
+      const payload={user_id:currentUser.id,state:(typeof uiStateOnly==='function'?uiStateOnly():stripRuntimeICSCache(state)),updated_at:new Date().toISOString()};
+      const {error}=await supabaseClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+      if(error){toast('App-State konnte nicht gespeichert werden: '+error.message);return false;}
+      if(typeof scheduleRelationalSave==='function')scheduleRelationalSave();
+      if(typeof setCloudStatus==='function')setCloudStatus('App-State gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),'ok');
+    }else{try{persist();}catch(e){}}
+    return true;
+  }
+
+  function visibleEventsForVacation68(day){
+    try{
+      return visibleCalendars().flatMap(({cal})=>{
+        const links=cal.links||[];
+        return [...(cal.events||[]),...(cal.ownEvents||[])].filter(e=>{
+          const link=links.find(l=>l.id===e.icsId||l.id===e.sourceId);
+          if(link&&link.visible===false)return false;
+          const occ=eventOccurrenceForDate(e,day);
+          return occ&&occ.allDay&&String(occ.summary||'').trim().toLowerCase()==='urlaub';
+        });
+      });
+    }catch(e){return [];}
+  }
+  function isVacationWeekday68(day){
+    ensure68();
+    if(!state.vacationHighlight.enabled)return false;
+    if(isWeekend68(day))return false;
+    return visibleEventsForVacation68(day).length>0;
+  }
+  function cleanInlineDecoration68(node){
+    if(!node)return;
+    node.classList.remove('vacation-day-rev52','rev64-weekend-day','rev65-weekend-day','rev66-weekend-day','rev66-vacation-day');
+    node.classList.remove('rev64-weekend-cell','rev65-weekend-cell','rev66-weekend-cell','rev66-vacation-cell');
+    const s=node.getAttribute('style')||'';
+    if(/color-mix|linear-gradient|f97316|e2e8f0|rev6[456]/i.test(s))node.removeAttribute('style');
+  }
+  function decorateNode68(node,day,isMonth=false){
+    if(!node)return;
+    ensure68();setVars68();
+    cleanInlineDecoration68(node);
+    const weekend=isWeekend68(day);
+    if(weekend&&state.weekendHighlight.enabled)node.classList.add(isMonth?'rev68-weekend-cell':'rev68-weekend-day');
+    else if(!weekend&&isVacationWeekday68(day))node.classList.add(isMonth?'rev68-vacation-cell':'rev68-vacation-day');
+  }
+  function decorateAll68(){
+    setVars68();
+    document.querySelectorAll('[data-month-date]').forEach(cell=>decorateNode68(cell,new Date(cell.dataset.monthDate+'T00:00:00'),true));
+    document.querySelectorAll('.day').forEach(day=>{
+      const txt=day.querySelector('.day-title-date')?.textContent||'';
+      const m=txt.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+      if(m){decorateNode68(day,new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`),false);}
+    });
+    const shown=addDays(new Date(new Date().setHours(0,0,0,0)),Number(state.timelineDayOffset||0));
+    const wrap=document.querySelector('#sidebarDayTimelineRev049 .timeline-canvas-wrap');
+    if(wrap){cleanInlineDecoration68(wrap);if(isWeekend68(shown)&&state.weekendHighlight.enabled)wrap.classList.add('rev68-weekend-timeline');else if(isVacationWeekday68(shown))wrap.classList.add('rev68-vacation-timeline');}
+  }
+  const oldRender68=window.render||render;
+  window.render=render=function(){const r=oldRender68.apply(this,arguments);setTimeout(decorateAll68,0);setTimeout(decorateAll68,120);return r;};
+  const oldRenderMonth68=window.renderMonthView||renderMonthView;
+  window.renderMonthView=renderMonthView=function(){const r=oldRenderMonth68.apply(this,arguments);setTimeout(decorateAll68,0);return r;};
+  const oldDayCard68=window.dayCard||dayCard;
+  window.dayCard=dayCard=function(date){const node=oldDayCard68.apply(this,arguments);decorateNode68(node,date,false);return node;};
+  if(typeof renderSidebarTimelineRev050==='function'){
+    const oldTimeline68=renderSidebarTimelineRev050;
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){const r=oldTimeline68.apply(this,arguments);setTimeout(decorateAll68,0);return r;};
+  }
+
+  function colorInput68(id,val){return `<input id="${id}" type="color" value="${esc68(val)}" style="height:38px;width:72px;padding:2px">`;}
+  function openSettings68(){
+    ensure68();
+    const d=JSON.parse(JSON.stringify({theme:state.theme||'light',cornerStyle:state.cornerStyle||'rounded',outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',vacationHighlight:state.vacationHighlight,weekendHighlight:state.weekendHighlight,todayHighlight:state.todayHighlight,syncInterval:state.syncInterval??15}));
+    let active='general';
+    $('#modalTitle').textContent='Allgemeine Einstellungen';
+    $('#modalContent').innerHTML=`<div class="rev68-settings"><div class="rev68-tabs"><button class="rev68-tab active" data-tab68="general" type="button">Allgemein</button><button class="rev68-tab" data-tab68="sync" type="button">Synchronisierung</button><button class="rev68-tab" data-tab68="info" type="button">Hinweise</button></div><div id="settingsTabContentRev68" class="rev68-content"></div></div>`;
+    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';$('#cancelModal').style.display='';
+    function readVisible(){
+      if($('#mTheme68'))d.theme=$('#mTheme68').value;
+      if($('#mCornerStyle68'))d.cornerStyle=$('#mCornerStyle68').value;
+      if($('#mOutlineStyle68'))d.outlineStyle=$('#mOutlineStyle68').value;
+      if($('#mOutlineColor68'))d.outlineCustomColor=$('#mOutlineColor68').value;
+      if($('#mWeekendEnabled68'))d.weekendHighlight.enabled=$('#mWeekendEnabled68').checked;
+      if($('#mWeekendColor68'))d.weekendHighlight.color=$('#mWeekendColor68').value;
+      if($('#mWeekendOpacity68'))d.weekendHighlight.opacity=clamp68($('#mWeekendOpacity68').value,0.05,0.70,REV68_WEEKEND.opacity);
+      if($('#mVacationEnabled68'))d.vacationHighlight.enabled=$('#mVacationEnabled68').checked;
+      if($('#mVacationColor68'))d.vacationHighlight.color=$('#mVacationColor68').value;
+      if($('#mVacationOpacity68'))d.vacationHighlight.opacity=clamp68($('#mVacationOpacity68').value,0.05,0.55,REV68_VAC.opacity);
+      if($('#mTodayWidth68'))d.todayHighlight.borderWidth=clamp68($('#mTodayWidth68').value,1,10,REV68_TODAY.borderWidth);
+      if($('#mTodayColor68'))d.todayHighlight.borderColor=$('#mTodayColor68').value;
+      if($('#mTodayOpacity68'))d.todayHighlight.opacity=clamp68($('#mTodayOpacity68').value,0,0.65,REV68_TODAY.opacity);
+      if($('#mSyncInterval68'))d.syncInterval=Number($('#mSyncInterval68').value);
+    }
+    function renderGeneral(){
+      const root=$('#settingsTabContentRev68');if(!root)return;
+      root.innerHTML=`<div class="rev68-grid">
+        <section class="rev68-card"><h3>Darstellung</h3>
+          <div class="rev68-row"><label>Erscheinung</label><select id="mTheme68"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div>
+          <div class="rev68-row"><label>Kanten</label><select id="mCornerStyle68"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div>
+          <div class="rev68-row"><label>Konturfarbe</label><div class="rev68-inline"><select id="mOutlineStyle68"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Eigene Farbe</option></select>${colorInput68('mOutlineColor68',d.outlineCustomColor)}</div></div>
+          <p class="rev68-help">Die Konturfarbe gilt für größere Rahmen und Gruppenlinien.</p>
+        </section>
+        <section class="rev68-card"><label class="rev68-check"><span><b>Wochenendtage anders anzeigen</b><small>Samstag und Sonntag erhalten optional eine eigene Hintergrundfarbe.</small></span><input id="mWeekendEnabled68" type="checkbox"></label>
+          <div class="rev68-row"><label>Wochenendfarbe</label>${colorInput68('mWeekendColor68',d.weekendHighlight.color)}</div>
+          <div class="rev68-row"><label>Wochenend-Deckkraft</label><input id="mWeekendOpacity68" type="range" min="0.05" max="0.70" step="0.01" value="${esc68(d.weekendHighlight.opacity)}"></div>
+        </section>
+        <section class="rev68-card"><label class="rev68-check"><span><b>Urlaubstage anders anzeigen</b><small>Wenn ein sichtbarer ICS- oder eigener Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält und der Tag kein Wochenendtag ist, wird der gesamte Tag farblich hinterlegt. Samstag und Sonntag zählen als Wochenende und werden nicht als Urlaubstag eingefärbt.</small></span><input id="mVacationEnabled68" type="checkbox"></label>
+          <div class="rev68-row"><label>Urlaubsfarbe</label>${colorInput68('mVacationColor68',d.vacationHighlight.color)}</div>
+          <div class="rev68-row"><label>Urlaubs-Deckkraft</label><input id="mVacationOpacity68" type="range" min="0.05" max="0.55" step="0.01" value="${esc68(d.vacationHighlight.opacity)}"></div>
+        </section>
+        <section class="rev68-card"><h3>Aktueller Tag <small>Kontur und Flächenfüllung des heutigen Tages.</small></h3>
+          <div class="rev68-row"><label>Linienstärke</label><input id="mTodayWidth68" type="range" min="1" max="10" step="1" value="${esc68(d.todayHighlight.borderWidth)}"></div>
+          <div class="rev68-row"><label>Linienfarbe</label>${colorInput68('mTodayColor68',d.todayHighlight.borderColor)}</div>
+          <div class="rev68-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity68" type="range" min="0" max="0.65" step="0.01" value="${esc68(d.todayHighlight.opacity)}"></div>
+        </section>
+      </div>`;
+      $('#mTheme68').value=d.theme;$('#mCornerStyle68').value=d.cornerStyle;$('#mOutlineStyle68').value=d.outlineStyle;
+      $('#mWeekendEnabled68').checked=!!d.weekendHighlight.enabled;$('#mVacationEnabled68').checked=!!d.vacationHighlight.enabled;
+    }
+    function renderSync(){
+      const root=$('#settingsTabContentRev68');if(!root)return;
+      root.innerHTML=`<div class="rev68-grid"><section class="rev68-card"><h3>Synchronisierung</h3><div class="rev68-row"><label>Intervall</label><select id="mSyncInterval68"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><p class="rev68-help">Der grüne Reload-Button lädt Kalender- und Datenbankdaten manuell neu.</p></section></div>`;
+      $('#mSyncInterval68').value=String(d.syncInterval??15);
+    }
+    function renderInfo(){
+      const root=$('#settingsTabContentRev68');if(!root)return;
+      root.innerHTML=`<div class="rev68-grid">
+        <section class="rev68-card"><h3>Hinweise zur Wochenendlogik</h3><p>Samstag und Sonntag zählen immer als Wochenende. Die Wochenendmarkierung ist separat aktivierbar und besitzt eigene Farbe sowie eigene Deckkraft.</p></section>
+        <section class="rev68-card"><h3>Hinweise zur Urlaubslogik</h3><p>Urlaub wird nur erkannt, wenn ein sichtbarer ICS- oder eigener Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält. Samstag und Sonntag sind ausgeschlossen.</p></section>
+        <section class="rev68-card"><h3>Hinweise zur Task-Erstellung</h3><p>Tagestasks, langfristige Tasks und Projekt-Tasks können ohne Titel gespeichert werden. Wenn kein Titel vorhanden ist, wird automatisch „Aufgabe“ gesetzt. Enter speichert, Shift+Enter erzeugt in Notizfeldern einen Zeilenumbruch.</p></section>
+        <section class="rev68-card"><h3>Hinweise zur Löschlogik</h3><p>Beim Öffnen von Kalenderterminen und der Monatsübersicht werden alte Task-Löschaktionen entfernt. Dadurch kann kein zuvor geöffneter Task versehentlich gelöscht werden.</p></section>
+      </div>`;
+    }
+    function renderActive(){if(active==='general')renderGeneral();else if(active==='sync')renderSync();else renderInfo();}
+    renderActive();
+    document.querySelectorAll('[data-tab68]').forEach(btn=>btn.onclick=()=>{readVisible();active=btn.dataset.tab68;document.querySelectorAll('[data-tab68]').forEach(b=>b.classList.toggle('active',b===btn));renderActive();});
+    $('#saveModal').onclick=async()=>{
+      readVisible();
+      state.theme=d.theme;state.cornerStyle=d.cornerStyle;state.outlineStyle=d.outlineStyle;state.outlineCustomColor=d.outlineCustomColor;
+      state.weekendHighlight=Object.assign({},REV68_WEEKEND,d.weekendHighlight||{});
+      state.vacationHighlight=Object.assign({},REV68_VAC,d.vacationHighlight||{});
+      state.todayHighlight=Object.assign({},REV68_TODAY,d.todayHighlight||{});
+      state.syncInterval=Number(d.syncInterval??15);
+      ensure68();applyAppearance();if(typeof setupAutoSync==='function')setupAutoSync();
+      const ok=await saveSettings68();closeModal();render();toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');
+    };
+    removeStaleDeletes68();
+  }
+
+  function bindEnterSave68(){
+    const content=$('#modalContent');if(!content||content.dataset.rev68EnterBound)return;
+    content.dataset.rev68EnterBound='1';
+    content.addEventListener('keydown',ev=>{
+      const title=($('#modalTitle')?.textContent||'').toLowerCase();
+      const isTask=/tagestask|langfristigen task|langfristiger task|projekt-task/.test(title);
+      if(!isTask)return;
+      if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();ev.stopPropagation();$('#saveModal')?.click();}
+    },true);
+  }
+  function normalizeTitle68(raw,note){raw=String(raw||'').trim();note=String(note||'').trim();return raw||'Aufgabe';}
+  window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
+    if(!requireLogin())return;ensureSettings();
+    openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>`,()=>{
+      const note=($('#mNote')?.value||'').trim();const title=normalizeTitle68($('#mTitle')?.value,note);
+      state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate').value||date,done:false,note,columnId:$('#mTaskColumn').value});
+    });
+    setTimeout(bindEnterSave68,0);
+  };
+  window.openLongModal=openLongModal=function(){
+    if(!requireLogin())return;
+    openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><textarea id="mNote" rows="3" placeholder="Notiz"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>`,()=>{
+      const note=($('#mNote')?.value||'').trim();const title=normalizeTitle68($('#mTitle')?.value,note);
+      const col=(state.longColumns&&state.longColumns[0])?state.longColumns[0].id:undefined;
+      state.longterm.push({id:crypto.randomUUID(),title,done:false,note,createdDate:fmtDate(new Date()),completedDate:null,columnId:col});
+    });
+    setTimeout(bindEnterSave68,0);
+  };
+  if(typeof openProjectTaskModalRev047==='function'){
+    window.openProjectTaskModalRev047=openProjectTaskModalRev047=function(projectId){
+      if(!requireLogin())return;ensureProjectsRev047();const p=state.projects.find(x=>x.id===projectId);if(!p)return;
+      openModal(`Projekt-Task hinzufügen · ${escapeHtml(p.name)}`,`<input id="mProjectTaskTitle" placeholder="Aufgabe"><input id="mProjectTaskDue" type="date"><textarea id="mProjectTaskNote" rows="4" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+        const note=($('#mProjectTaskNote')?.value||'').trim();const title=normalizeTitle68($('#mProjectTaskTitle')?.value,note);
+        try{const saved=await insertProjectTaskRev047({projectId,title,dueDate:$('#mProjectTaskDue').value,note,done:false});state.projectTasks.push(saved);render();toast('Projekt-Task gespeichert.');}catch(error){toast('Projekt-Task konnte nicht gespeichert werden: '+(error.message||error));}
+      });
+      setTimeout(bindEnterSave68,0);
+    };
+  }
+  const oldTaskDetail68=window.openTaskDetailModal||openTaskDetailModal;
+  window.openTaskDetailModal=openTaskDetailModal=function(ref){const r=oldTaskDetail68.apply(this,arguments);setTimeout(()=>{bindEnterSave68();const old=$('#saveModal')?.onclick;if(old){$('#saveModal').onclick=()=>{const tInput=$('#editTaskTitle');const nInput=$('#editTaskNote');if(tInput&&!tInput.value.trim())tInput.value='Aufgabe';old();};}},0);return r;};
+  if(typeof openProjectTaskDetailModalRev047==='function'){
+    const oldPTDetail68=openProjectTaskDetailModalRev047;
+    window.openProjectTaskDetailModalRev047=openProjectTaskDetailModalRev047=function(id){const r=oldPTDetail68.apply(this,arguments);setTimeout(()=>{bindEnterSave68();const old=$('#saveModal')?.onclick;if(old){$('#saveModal').onclick=()=>{const tInput=$('#editProjectTaskTitle');if(tInput&&!tInput.value.trim())tInput.value='Aufgabe';old();};}},0);return r;};
+  }
+
+  function removeStaleDeletes68(){
+    const title=($('#modalTitle')?.textContent||'').toLowerCase();
+    const isOwnEvent=/eigenen termin bearbeiten/.test(title);
+    const isTaskDetail=/tagestask bearbeiten|langfristigen task bearbeiten|projekt-task bearbeiten/.test(title);
+    if(isOwnEvent||isTaskDetail)return;
+    document.querySelectorAll('.modal-actions .rev62-delete-left,.modal-actions .rev61-trash-left,.modal-actions .rev58-own-trash,.modal-actions .rev57-trash-left,.modal-actions .own-delete-square56,.modal-actions #rev58DeleteOwnEvent,.modal-actions #deleteOwnFromEditRev51,.modal-actions #deleteOwnEvent,#modalContent #deleteOwnFromEditRev51,#modalContent #deleteOwnEvent,.modal-actions .rev68-delete-left').forEach(b=>b.remove());
+  }
+  const oldEventDetail68=window.openEventDetailModal||openEventDetailModal;
+  window.openEventDetailModal=openEventDetailModal=function(ref){const r=oldEventDetail68.apply(this,arguments);setTimeout(()=>{const type=String(ref||'').split(':')[0];if(type!=='own')removeStaleDeletes68();},0);return r;};
+  const oldMonthOpen68=window.openMonthModal||openMonthModal;
+  window.openMonthModal=openMonthModal=function(){removeStaleDeletes68();const r=oldMonthOpen68.apply(this,arguments);setTimeout(()=>{removeStaleDeletes68();decorateAll68();},0);return r;};
+  const observer68=new MutationObserver(()=>removeStaleDeletes68());
+  setTimeout(()=>{const modal=$('#modalBackdrop');if(modal)observer68.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});},200);
+
+  const css=document.createElement('style');
+  css.textContent=`
+    .rev68-settings{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;align-items:start;color:#111827!important;}
+    .rev68-tabs{display:flex;flex-direction:column;gap:8px;}.rev68-tab{width:100%;text-align:left;background:#f3f4f6!important;border:1px solid #cbd6e7!important;color:#111827!important;border-radius:12px;padding:10px 12px;font-weight:900}.rev68-tab.active{background:#d1d5db!important;border-color:#9ca3af!important;color:#111827!important;}
+    .rev68-grid{display:grid;gap:12px}.rev68-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827!important}.rev68-card h3{margin:0;font-size:15px;color:#111827!important}.rev68-card p{margin:0;color:#334155;line-height:1.4}.rev68-card small,.rev68-help{display:block;color:#475569!important;font-size:12px;line-height:1.35;margin-top:3px}.rev68-row{display:grid;grid-template-columns:minmax(155px,230px) minmax(0,1fr);gap:10px;align-items:center}.rev68-row label{font-weight:800;color:#111827;font-size:13px}.rev68-row input,.rev68-row select{min-width:0}.rev68-inline{display:flex;gap:8px;align-items:center}.rev68-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}.rev68-check b{font-weight:1000;color:#111827!important}.rev68-check input[type="checkbox"]{width:20px;height:20px;accent-color:#0284c7}
+    .rev68-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent)),#0b1221!important}.month-cell.rev68-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent)),#070d1a!important}.rev68-vacation-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent)),#0b1221!important}.month-cell.rev68-vacation-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent)),#070d1a!important}body.light .rev68-weekend-day,body.light .rev68-vacation-day{background-color:#f8fbff!important}body.light .month-cell.rev68-weekend-cell,body.light .month-cell.rev68-vacation-cell{background-color:#f8fbff!important}.rev68-weekend-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev68WeekendColor) var(--rev68WeekendOpacityPercent),transparent)),#050a16!important}.rev68-vacation-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev68VacationColor) var(--rev68VacationOpacityPercent),transparent)),#050a16!important}
+    @media(max-width:760px){.rev68-settings{grid-template-columns:1fr}.rev68-tabs{flex-direction:row;flex-wrap:wrap}.rev68-tab{width:auto}.rev68-row{grid-template-columns:1fr;gap:5px}}
+  `;
+  document.head.appendChild(css);
+
+  window.openSyncSettingsModal=openSyncSettingsModal=openSettings68;
+  function bindSettings68(){const b=$('#settingsBtn');if(b)b.onclick=openSettings68;}
+  bindSettings68();
+  setTimeout(bindSettings68,100);setTimeout(bindSettings68,600);setTimeout(()=>{ensure68();setVars68();decorateAll68();},300);
+})();
+
+
+/* Rev 070: modulare Online-Revision
+   - Urlaubstage: nur sichtbare ganztägige Termine mit exakt „Urlaub“, niemals Samstag/Sonntag
+   - Wochenenden separat farblich/mit Deckkraft einstellbar
+   - Hinweise-Reiter mit konkretem Inhalt
+   - harter Datenbank-Speicherbutton für App-State + relationale Tabellen
+   - Änderungen an bestehenden ICS-/eigenen Kalenderquellen werden sofort in calendar_sources gespeichert
+   - eigene Termine, Tages-/Langzeit-/Projekt-Tasks können ohne Titel gespeichert werden
+   - Enter speichert global im Modal, Shift+Enter erzeugt Zeilenumbruch in Textfeldern
+*/
+(function(){
+  const REV70_DEFAULTS={
+    vacationHighlight:{enabled:false,color:'#f97316',opacity:0.18},
+    weekendHighlight:{enabled:false,color:'#e2e8f0',opacity:0.28},
+    todayHighlight:{borderWidth:4,borderColor:'#0284c7',opacity:0.18},
+    outlineStyle:'current',
+    outlineCustomColor:'#64748b'
+  };
+  const esc=v=>escapeHtml(String(v??''));
+  const isHex=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
+  const clamp=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
+  const isWeekend=d=>{const x=new Date(d).getDay();return x===0||x===6;};
+  const fallbackTaskTitle='Aufgabe';
+  const fallbackEventTitle='Termin';
+
+  function ensure70(){
+    state.vacationHighlight=Object.assign({},REV70_DEFAULTS.vacationHighlight,state.vacationHighlight||{});
+    state.weekendHighlight=Object.assign({},REV70_DEFAULTS.weekendHighlight,state.weekendHighlight||{});
+    state.todayHighlight=Object.assign({},REV70_DEFAULTS.todayHighlight,state.todayHighlight||{});
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.color=isHex(state.vacationHighlight.color)?state.vacationHighlight.color:REV70_DEFAULTS.vacationHighlight.color;
+    state.weekendHighlight.color=isHex(state.weekendHighlight.color)?state.weekendHighlight.color:REV70_DEFAULTS.weekendHighlight.color;
+    state.todayHighlight.borderColor=isHex(state.todayHighlight.borderColor)?state.todayHighlight.borderColor:REV70_DEFAULTS.todayHighlight.borderColor;
+    state.outlineCustomColor=isHex(state.outlineCustomColor)?state.outlineCustomColor:REV70_DEFAULTS.outlineCustomColor;
+    state.vacationHighlight.opacity=clamp(state.vacationHighlight.opacity,0.05,0.55,REV70_DEFAULTS.vacationHighlight.opacity);
+    state.weekendHighlight.opacity=clamp(state.weekendHighlight.opacity,0.05,0.70,REV70_DEFAULTS.weekendHighlight.opacity);
+    state.todayHighlight.borderWidth=clamp(state.todayHighlight.borderWidth,1,10,REV70_DEFAULTS.todayHighlight.borderWidth);
+    state.todayHighlight.opacity=clamp(state.todayHighlight.opacity,0,0.65,REV70_DEFAULTS.todayHighlight.opacity);
+    state.outlineStyle=['current','none','gray','black','custom'].includes(state.outlineStyle)?state.outlineStyle:REV70_DEFAULTS.outlineStyle;
+  }
+
+  const prevEnsure=ensureSettings;
+  ensureSettings=function(){prevEnsure();ensure70();};
+
+  const prevApply=applyAppearance;
+  applyAppearance=function(){
+    prevApply();ensure70();
+    document.documentElement.style.setProperty('--rev70WeekendColor',state.weekendHighlight.color);
+    document.documentElement.style.setProperty('--rev70WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');
+    document.documentElement.style.setProperty('--rev70VacationColor',state.vacationHighlight.color);
+    document.documentElement.style.setProperty('--rev70VacationOpacityPercent',Math.round(state.vacationHighlight.opacity*100)+'%');
+  };
+
+  function visibleVacationEventOn(day){
+    try{
+      return visibleCalendars().some(({cal})=>{
+        const links=cal.links||[];
+        const all=[...(cal.events||[]),...(cal.ownEvents||[])];
+        return all.some(e=>{
+          const link=links.find(l=>l.id===e.icsId||l.id===e.sourceId);
+          if(link&&link.visible===false)return false;
+          const occ=eventOccurrenceForDate(e,day);
+          return !!(occ&&occ.allDay&&String(occ.summary||occ.title||'').trim().toLowerCase()==='urlaub');
+        });
+      });
+    }catch(e){return false;}
+  }
+  function isVacationDay70(day){ensure70();return !!(state.vacationHighlight.enabled&&!isWeekend(day)&&visibleVacationEventOn(day));}
+  function clearOldDayClasses(node){
+    if(!node)return;
+    node.classList.remove('vacation-day-rev52','rev64-weekend-day','rev65-weekend-day','rev66-weekend-day','rev68-weekend-day','rev66-vacation-day','rev68-vacation-day','rev70-weekend-day','rev70-vacation-day');
+    node.classList.remove('rev64-weekend-cell','rev65-weekend-cell','rev66-weekend-cell','rev68-weekend-cell','rev66-vacation-cell','rev68-vacation-cell','rev70-weekend-cell','rev70-vacation-cell');
+    node.classList.remove('rev65-weekend-timeline','rev68-weekend-timeline','rev68-vacation-timeline','rev70-weekend-timeline','rev70-vacation-timeline','vacation-active');
+  }
+  function decorateNode70(node,day,isMonth=false){
+    if(!node)return;ensure70();clearOldDayClasses(node);
+    const weekend=isWeekend(day);
+    if(weekend&&state.weekendHighlight.enabled)node.classList.add(isMonth?'rev70-weekend-cell':'rev70-weekend-day');
+    if(!weekend&&isVacationDay70(day))node.classList.add(isMonth?'rev70-vacation-cell':'rev70-vacation-day');
+  }
+  function decorateAll70(){
+    ensure70();
+    document.querySelectorAll('[data-month-date]').forEach(cell=>decorateNode70(cell,new Date(cell.dataset.monthDate+'T00:00:00'),true));
+    document.querySelectorAll('.day').forEach(day=>{
+      const txt=day.querySelector('.day-title-date')?.textContent||'';
+      const m=txt.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+      if(m)decorateNode70(day,new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`),false);
+    });
+    const shown=addDays(new Date(new Date().setHours(0,0,0,0)),Number(state.timelineDayOffset||0));
+    const wrap=document.querySelector('#sidebarDayTimelineRev049 .timeline-canvas-wrap');
+    if(wrap){clearOldDayClasses(wrap);if(isWeekend(shown)&&state.weekendHighlight.enabled)wrap.classList.add('rev70-weekend-timeline');else if(isVacationDay70(shown))wrap.classList.add('rev70-vacation-timeline');}
+  }
+
+  const oldRender=window.render||render;
+  window.render=render=function(){const r=oldRender.apply(this,arguments);setTimeout(decorateAll70,0);setTimeout(decorateAll70,160);return r;};
+  const oldMonth=window.renderMonthView||renderMonthView;
+  window.renderMonthView=renderMonthView=function(){const r=oldMonth.apply(this,arguments);setTimeout(decorateAll70,0);return r;};
+  const oldDay=window.dayCard||dayCard;
+  window.dayCard=dayCard=function(date){const node=oldDay.apply(this,arguments);decorateNode70(node,date,false);return node;};
+  if(typeof renderSidebarTimelineRev050==='function'){
+    const oldTl=renderSidebarTimelineRev050;
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){const r=oldTl.apply(this,arguments);setTimeout(decorateAll70,0);return r;};
+  }
+
+  function normalizeTitle(raw,fallback){return String(raw||'').trim()||fallback;}
+  function bindModalEnter70(){
+    const content=document.querySelector('#modalContent');if(!content||content.dataset.rev70EnterBound)return;
+    content.dataset.rev70EnterBound='1';
+    content.addEventListener('keydown',ev=>{
+      if(ev.key!=='Enter')return;
+      if(ev.shiftKey)return;
+      ev.preventDefault();ev.stopPropagation();
+      document.querySelector('#saveModal')?.click();
+    },true);
+  }
+  const prevOpenModal70=openModal;
+  openModal=function(title,html,onSave){
+    const wrapped=()=>{return onSave&&onSave();};
+    const result=prevOpenModal70(title,html,wrapped);
+    setTimeout(bindModalEnter70,0);
+    return result;
+  };
+
+  window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
+    if(!requireLogin())return;ensureSettings();
+    openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,()=>{
+      const note=($('#mNote')?.value||'').trim();
+      state.tasks.push({id:crypto.randomUUID(),title:normalizeTitle($('#mTitle')?.value,fallbackTaskTitle),date:$('#mDate')?.value||date,done:false,note,columnId:$('#mTaskColumn')?.value});
+    });
+  };
+  window.openLongModal=openLongModal=function(){
+    if(!requireLogin())return;ensureSettings();
+    const groups=state.longColumns&&state.longColumns.length?state.longColumns:[{id:'long_default',name:'Allgemein'}];
+    openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><select id="mLongColumn">${groups.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><textarea id="mNote" rows="3" placeholder="Notiz"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const note=($('#mNote')?.value||'').trim();
+      const selected=$('#mLongColumn')?.value||groups[0]?.id||'long_default';
+      try{
+        if(typeof insertLongTaskRev043==='function')state.longterm.push(await insertLongTaskRev043({title:normalizeTitle($('#mTitle')?.value,fallbackTaskTitle),done:false,note,columnId:selected}));
+        else state.longterm.push({id:crypto.randomUUID(),title:normalizeTitle($('#mTitle')?.value,fallbackTaskTitle),done:false,note,createdDate:fmtDate(new Date()),completedDate:null,columnId:selected});
+        render();toast('Langfristiger Task gespeichert.');
+      }catch(error){toast('Langfristiger Task konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+  if(typeof openProjectTaskModalRev047==='function'){
+    window.openProjectTaskModalRev047=openProjectTaskModalRev047=function(projectId){
+      if(!requireLogin())return;if(typeof ensureProjectsRev047==='function')ensureProjectsRev047();
+      const p=(state.projects||[]).find(x=>String(x.id)===String(projectId));if(!p)return toast('Projekt nicht gefunden.');
+      openModal(`Projekt-Task hinzufügen · ${escapeHtml(p.name)}`,`<input id="mProjectTaskTitle" placeholder="Aufgabe"><input id="mProjectTaskDue" type="date"><textarea id="mProjectTaskNote" rows="4" placeholder="Notiz / Kontext"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Aufgabe“ gespeichert. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+        const note=($('#mProjectTaskNote')?.value||'').trim();
+        try{const saved=await insertProjectTaskRev047({projectId,title:normalizeTitle($('#mProjectTaskTitle')?.value,fallbackTaskTitle),dueDate:$('#mProjectTaskDue')?.value||null,note,done:false});state.projectTasks.push(saved);render();toast('Projekt-Task gespeichert.');}
+        catch(error){toast('Projekt-Task konnte nicht gespeichert werden: '+(error.message||error));}
+      });
+    };
+  }
+  window.openOwnEventModal=openOwnEventModal=function(pane,date=fmtDate(new Date())){
+    if(!requireLogin())return;ensureSettings();
+    const cal=state.calendars[pane];const ownSources=(cal?.links||[]).filter(l=>l.type==='own'&&l.visible!==false);
+    if(!cal||!ownSources.length)return toast('Kein eigener Kalender sichtbar. Füge zuerst einen eigenen Kalender hinzu.');
+    openModal(`Termin hinzufügen · ${escapeHtml(cal.name)}`,`<input id="mEventTitle" placeholder="Titel des Termins"><select id="mEventSource">${ownSources.map(l=>`<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)}</option>`).join('')}</select><input id="mEventLocation" placeholder="Ort"><div class="field"><label>Datum</label><input id="mEventDate" type="date" value="${date}"></div><div class="field"><label>Wiederholung</label><select id="mEventRecurrence"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div><div class="field"><label>Ganztägig</label><select id="mEventAllDay"><option value="false">Nein</option><option value="true">Ja</option></select></div><div class="field"><label>Startzeit</label><input id="mEventStart" type="time" value="09:00"></div><div class="field"><label>Endzeit</label><input id="mEventEnd" type="time" value="10:00"></div><input id="mEventTravel" placeholder="Wegzeit, z. B. 20 Min."><textarea id="mEventDescription" rows="4" placeholder="Details / Notizen"></textarea><div class="hint">Kein Titel nötig: Ohne Titel wird „Termin“ gespeichert. Enter speichert. Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const sourceId=$('#mEventSource')?.value;const src=ownSources.find(l=>l.id===sourceId)||ownSources[0];
+      const d=$('#mEventDate')?.value||date;const allDay=$('#mEventAllDay')?.value==='true';
+      const st=$('#mEventStart')?.value||'00:00';const en=$('#mEventEnd')?.value||st;
+      const start=allDay?new Date(d+'T00:00:00'):new Date(d+'T'+st+':00');
+      const end=allDay?new Date(d+'T23:59:00'):new Date(d+'T'+en+':00');
+      const event={id:crypto.randomUUID(),sourceId,summary:normalizeTitle($('#mEventTitle')?.value,fallbackEventTitle),location:$('#mEventLocation')?.value.trim()||'',start:start.toISOString(),end:end.toISOString(),allDay,recurrence:$('#mEventRecurrence')?.value||'none',source:src?.name||cal.name,icsName:src?.name||cal.name,icsColor:src?.color||state.colors.event,travelTime:$('#mEventTravel')?.value.trim()||'',description:$('#mEventDescription')?.value.trim()||'',manual:true,status:'active'};
+      cal.ownEvents=cal.ownEvents||[];cal.ownEvents.push(event);
+      if(currentUser&&isUuid(event.id)&&isUuid(sourceId)){
+        const {error}=await supabaseClient.from('own_events').upsert({id:event.id,user_id:currentUser.id,calendar_source_id:sourceId,title:event.summary,location:event.location||null,description:event.description||null,start_time:event.start,end_time:event.end,all_day:event.allDay,recurrence:event.recurrence,travel_time:event.travelTime||null,status:event.status},{onConflict:'id'});
+        if(error)toast('Termin lokal gespeichert, Datenbank-Speicherung fehlgeschlagen: '+error.message);
+      }
+      await hardSave70(false);render();toast('Termin gespeichert.');
+    });
+  };
+
+  function patchExistingEditorTitle70(){
+    const save=$('#saveModal');if(!save||save.dataset.rev70TitlePatch)return;
+    save.dataset.rev70TitlePatch='1';const old=save.onclick;
+    save.onclick=function(ev){
+      ['#editOwnTitleRev51','#editTaskTitle','#editProjectTaskTitle','#mEventTitle','#mTitle','#mProjectTaskTitle'].forEach(sel=>{const el=$(sel);if(el&&!el.value.trim())el.value=sel.includes('Own')||sel.includes('Event')?fallbackEventTitle:fallbackTaskTitle;});
+      return old&&old.call(this,ev);
+    };
+  }
+  const oldEventDetail70=window.openEventDetailModal||openEventDetailModal;
+  window.openEventDetailModal=openEventDetailModal=function(ref){const r=oldEventDetail70.apply(this,arguments);setTimeout(()=>{patchExistingEditorTitle70();bindModalEnter70();},0);return r;};
+  const oldTaskDetail70=window.openTaskDetailModal||openTaskDetailModal;
+  window.openTaskDetailModal=openTaskDetailModal=function(ref){const r=oldTaskDetail70.apply(this,arguments);setTimeout(()=>{patchExistingEditorTitle70();bindModalEnter70();},0);return r;};
+  if(typeof openProjectTaskDetailModalRev047==='function'){
+    const oldPTD70=openProjectTaskDetailModalRev047;
+    window.openProjectTaskDetailModalRev047=openProjectTaskDetailModalRev047=function(id){const r=oldPTD70.apply(this,arguments);setTimeout(()=>{patchExistingEditorTitle70();bindModalEnter70();},0);return r;};
+  }
+
+  async function hardSave70(showToast=true){
+    if(!currentUser){if(showToast)toast('Nicht angemeldet. Harte Speicherung nicht möglich.');return false;}
+    ensureSettings();
+    try{
+      clearTimeout(cloudSaveTimer);
+      if(typeof saveStateToCloud==='function')await saveStateToCloud();
+      if(typeof saveRelationalSnapshot==='function')await saveRelationalSnapshot();
+      if(typeof setCloudStatus==='function')setCloudStatus('Hart gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),'ok');
+      if(showToast)toast('App-State und Tabellen hart gespeichert.');
+      return true;
+    }catch(error){if(showToast)toast('Harte Speicherung fehlgeschlagen: '+(error.message||error));return false;}
+  }
+  window.hardSaveRev70=hardSave70;
+
+  function sourceRow70(cal,link,idx){return {id:link.id,user_id:currentUser.id,calendar_group_id:cal.id||cal.dbId,type:link.type||'ics',name:link.name||'Kalenderquelle',url:link.type==='own'?null:(link.url||null),color:link.color||state.colors?.event||defaultColors.event,visible:link.visible!==false,position:idx||0};}
+  async function saveCalendarSource70(cal,link,idx){
+    if(!currentUser||!cal||!link||!isUuid(link.id))return;
+    normalizeRelationalIds();
+    const {error}=await supabaseClient.from('calendar_sources').upsert(sourceRow70(cal,link,idx),{onConflict:'id'});
+    if(error)throw error;
+  }
+  window.openICSSettingsModal=openICSSettingsModal=function(pane,idx){
+    if(!requireLogin())return;const cal=state.calendars[pane];const link=cal?.links?.[idx];if(!link)return;
+    openModal(`ICS-Einstellungen · ${escapeHtml(link.name)}`,`<input id="mIcsName" value="${escapeHtml(link.name)}" placeholder="Name des ICS-Kalenders"><input id="mIcsUrl" value="${escapeHtml(link.url||'')}" placeholder="ICS-Link"><div class="field"><label>Farbe</label><input id="mIcsColor70" type="color" value="${escapeHtml(link.color||state.colors.event)}"></div><div class="hint">Änderungen an Name, Link oder Farbe werden beim Speichern sofort in calendar_sources geschrieben und anschließend hart gespeichert.</div>`,async()=>{
+      const oldUrl=link.url||'';link.name=$('#mIcsName')?.value.trim()||'ICS Kalender';link.url=normalizeICSUrl($('#mIcsUrl')?.value.trim()||oldUrl);link.color=$('#mIcsColor70')?.value||link.color||state.colors.event;
+      (cal.events||[]).forEach(e=>{if(e.icsId===link.id){e.icsName=link.name;e.source=link.name;e.icsColor=link.color;}});
+      try{await saveCalendarSource70(cal,link,idx);await hardSave70(false);if(oldUrl!==link.url)await loadICS(pane);toast('ICS-Kalenderquelle gespeichert.');}
+      catch(error){toast('ICS-Quelle konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+  window.openOwnSourceModal=openOwnSourceModal=function(pane,idx){
+    if(!requireLogin())return;const cal=state.calendars[pane];const link=cal?.links?.[idx];if(!link)return;
+    openModal(`Eigener Kalender · ${escapeHtml(link.name)}`,`<input id="mOwnSourceName" value="${escapeHtml(link.name)}" placeholder="Name des eigenen Kalenders"><div class="field"><label>Farbe</label><input id="mOwnSourceColor70" type="color" value="${escapeHtml(link.color||state.colors.event)}"></div><div class="hint">Änderungen werden sofort in calendar_sources geschrieben und hart gespeichert.</div>`,async()=>{
+      link.name=$('#mOwnSourceName')?.value.trim()||'Eigener Kalender';link.color=$('#mOwnSourceColor70')?.value||link.color||state.colors.event;
+      (cal.ownEvents||[]).forEach(e=>{if(e.sourceId===link.id){e.source=link.name;e.icsName=link.name;e.icsColor=link.color;}});
+      try{await saveCalendarSource70(cal,link,idx);await hardSave70(false);toast('Eigener Kalender gespeichert.');}
+      catch(error){toast('Eigener Kalender konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+
+  function renderSettings70(){
+    ensure70();
+    const d=JSON.parse(JSON.stringify({theme:state.theme||'light',cornerStyle:state.cornerStyle||'rounded',outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',vacationHighlight:state.vacationHighlight,weekendHighlight:state.weekendHighlight,todayHighlight:state.todayHighlight,syncInterval:state.syncInterval??15}));
+    let active='general';
+    $('#modalTitle').textContent='Allgemeine Einstellungen';
+    $('#modalContent').innerHTML=`<div class="rev70-settings"><div class="rev70-tabs"><button class="rev70-tab active" data-tab70="general" type="button">Allgemein</button><button class="rev70-tab" data-tab70="sync" type="button">Synchronisierung</button><button class="rev70-tab" data-tab70="info" type="button">Hinweise</button></div><div id="settingsTabContentRev70" class="rev70-content"></div></div>`;
+    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';$('#cancelModal').style.display='';
+    function read(){
+      if($('#mTheme70'))d.theme=$('#mTheme70').value;if($('#mCornerStyle70'))d.cornerStyle=$('#mCornerStyle70').value;if($('#mOutlineStyle70'))d.outlineStyle=$('#mOutlineStyle70').value;if($('#mOutlineColor70'))d.outlineCustomColor=$('#mOutlineColor70').value;
+      if($('#mWeekendEnabled70'))d.weekendHighlight.enabled=$('#mWeekendEnabled70').checked;if($('#mWeekendColor70'))d.weekendHighlight.color=$('#mWeekendColor70').value;if($('#mWeekendOpacity70'))d.weekendHighlight.opacity=clamp($('#mWeekendOpacity70').value,0.05,0.70,0.28);
+      if($('#mVacationEnabled70'))d.vacationHighlight.enabled=$('#mVacationEnabled70').checked;if($('#mVacationColor70'))d.vacationHighlight.color=$('#mVacationColor70').value;if($('#mVacationOpacity70'))d.vacationHighlight.opacity=clamp($('#mVacationOpacity70').value,0.05,0.55,0.18);
+      if($('#mTodayWidth70'))d.todayHighlight.borderWidth=clamp($('#mTodayWidth70').value,1,10,4);if($('#mTodayColor70'))d.todayHighlight.borderColor=$('#mTodayColor70').value;if($('#mTodayOpacity70'))d.todayHighlight.opacity=clamp($('#mTodayOpacity70').value,0,0.65,0.18);
+      if($('#mSyncInterval70'))d.syncInterval=Number($('#mSyncInterval70').value);
+    }
+    function inputColor(id,val){return `<input id="${id}" type="color" value="${esc(val)}" class="rev70-color-input">`;}
+    function general(){const root=$('#settingsTabContentRev70');root.innerHTML=`<div class="rev70-grid">
+      <section class="rev70-card"><h3>Darstellung</h3><div class="rev70-row"><label>Erscheinung</label><select id="mTheme70"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div><div class="rev70-row"><label>Kanten</label><select id="mCornerStyle70"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="rev70-row"><label>Konturfarbe</label><div class="rev70-inline"><select id="mOutlineStyle70"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Eigene Farbe</option></select>${inputColor('mOutlineColor70',d.outlineCustomColor)}</div></div></section>
+      <section class="rev70-card"><label class="rev70-check"><span><b>Wochenenden anders anzeigen</b><small>Samstag und Sonntag erhalten optional eine eigene Hintergrundfarbe mit eigener Deckkraft.</small></span><input id="mWeekendEnabled70" type="checkbox"></label><div class="rev70-row"><label>Wochenendfarbe</label>${inputColor('mWeekendColor70',d.weekendHighlight.color)}</div><div class="rev70-row"><label>Wochenend-Deckkraft</label><input id="mWeekendOpacity70" type="range" min="0.05" max="0.70" step="0.01" value="${esc(d.weekendHighlight.opacity)}"></div></section>
+      <section class="rev70-card"><label class="rev70-check"><span><b>Urlaubstage anders anzeigen</b><small>Bedingungen: sichtbarer Kalendertermin, ganztägig, Titel exakt „Urlaub“, kein Samstag, kein Sonntag. Ein ganztägiger Urlaub am Samstag wird daher nicht in Urlaubsfarbe markiert.</small></span><input id="mVacationEnabled70" type="checkbox"></label><div class="rev70-row"><label>Urlaubsfarbe</label>${inputColor('mVacationColor70',d.vacationHighlight.color)}</div><div class="rev70-row"><label>Urlaubs-Deckkraft</label><input id="mVacationOpacity70" type="range" min="0.05" max="0.55" step="0.01" value="${esc(d.vacationHighlight.opacity)}"></div></section>
+      <section class="rev70-card"><h3>Aktueller Tag</h3><div class="rev70-row"><label>Linienstärke</label><input id="mTodayWidth70" type="range" min="1" max="10" step="1" value="${esc(d.todayHighlight.borderWidth)}"></div><div class="rev70-row"><label>Linienfarbe</label>${inputColor('mTodayColor70',d.todayHighlight.borderColor)}</div><div class="rev70-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity70" type="range" min="0" max="0.65" step="0.01" value="${esc(d.todayHighlight.opacity)}"></div></section>
+      </div>`;$('#mTheme70').value=d.theme;$('#mCornerStyle70').value=d.cornerStyle;$('#mOutlineStyle70').value=d.outlineStyle;$('#mWeekendEnabled70').checked=!!d.weekendHighlight.enabled;$('#mVacationEnabled70').checked=!!d.vacationHighlight.enabled;}
+    function sync(){const root=$('#settingsTabContentRev70');root.innerHTML=`<div class="rev70-grid"><section class="rev70-card"><h3>Synchronisierung</h3><div class="rev70-row"><label>Intervall</label><select id="mSyncInterval70"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><button class="btn primary" id="rev70HardSaveBtn" type="button">Alle Änderungen hart in Datenbank speichern</button><p class="rev70-help">Speichert App-State und alle relationalen Tabellen sofort. Das betrifft auch neu geänderte ICS-Links, Farben, Kalenderquellen, Tasks, Projekte und eigene Termine.</p><button class="btn" id="rev70ReloadBtn" type="button">Daten aus Datenbank neu laden</button></section></div>`;$('#mSyncInterval70').value=String(d.syncInterval??15);$('#rev70HardSaveBtn').onclick=async()=>{read();applyDraft();await hardSave70(true);};$('#rev70ReloadBtn').onclick=async()=>{if(typeof loadStateFromCloud==='function')await loadStateFromCloud();render();toast('Datenbankdaten neu geladen.');};}
+    function info(){const root=$('#settingsTabContentRev70');root.innerHTML=`<div class="rev70-grid"><section class="rev70-card"><h3>Urlaubslogik</h3><p>Ein Tag wird nur als Urlaubstag eingefärbt, wenn ein sichtbarer Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält. Samstag und Sonntag sind ausgeschlossen.</p></section><section class="rev70-card"><h3>Wochenendlogik</h3><p>Wochenenden haben eine eigene optionale Farbe und Deckkraft. Diese Markierung ist unabhängig von Urlaubstagen.</p></section><section class="rev70-card"><h3>Speicherung</h3><p>Der harte Speicherbutton schreibt den UI-App-State und die fachlichen Tabellen aktiv nach Supabase. Änderungen an bestehenden ICS-Links werden zusätzlich direkt beim Speichern der Quelle in calendar_sources aktualisiert.</p></section><section class="rev70-card"><h3>Enter-Verhalten</h3><p>Enter speichert geöffnete Dialoge. Shift+Enter erzeugt in Notizfeldern einen Absatz.</p></section></div>`;}
+    function applyDraft(){state.theme=d.theme;state.cornerStyle=d.cornerStyle;state.outlineStyle=d.outlineStyle;state.outlineCustomColor=d.outlineCustomColor;state.weekendHighlight=Object.assign({},REV70_DEFAULTS.weekendHighlight,d.weekendHighlight);state.vacationHighlight=Object.assign({},REV70_DEFAULTS.vacationHighlight,d.vacationHighlight);state.todayHighlight=Object.assign({},REV70_DEFAULTS.todayHighlight,d.todayHighlight);state.syncInterval=Number(d.syncInterval??15);ensure70();applyAppearance();if(typeof setupAutoSync==='function')setupAutoSync();}
+    function activeRender(){if(active==='general')general();else if(active==='sync')sync();else info();bindModalEnter70();}
+    activeRender();
+    document.querySelectorAll('[data-tab70]').forEach(btn=>btn.onclick=()=>{read();active=btn.dataset.tab70;document.querySelectorAll('[data-tab70]').forEach(b=>b.classList.toggle('active',b===btn));activeRender();});
+    $('#saveModal').onclick=async()=>{read();applyDraft();const ok=await hardSave70(false);closeModal();render();toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');};
+    bindModalEnter70();
+  }
+  window.openSyncSettingsModal=openSyncSettingsModal=renderSettings70;
+  function bindSettingsButton(){const b=$('#settingsBtn');if(b)b.onclick=renderSettings70;}
+  bindSettingsButton();setTimeout(bindSettingsButton,200);setTimeout(bindSettingsButton,800);
+
+  const style=document.createElement('style');
+  style.textContent=`
+    .rev70-settings{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;align-items:start;color:#111827!important;}
+    .rev70-tabs{display:flex;flex-direction:column;gap:8px}.rev70-tab{width:100%;text-align:left;background:#f3f4f6!important;border:1px solid #cbd6e7!important;color:#111827!important;border-radius:12px;padding:10px 12px;font-weight:900}.rev70-tab.active{background:#d1d5db!important;border-color:#9ca3af!important;color:#111827!important;}
+    .rev70-grid{display:grid;gap:12px}.rev70-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827!important}.rev70-card h3{margin:0;font-size:15px;color:#111827!important}.rev70-card p{margin:0;color:#334155;line-height:1.4}.rev70-card small,.rev70-help{display:block;color:#475569!important;font-size:12px;line-height:1.35;margin-top:3px}.rev70-row{display:grid;grid-template-columns:minmax(155px,230px) minmax(0,1fr);gap:10px;align-items:center}.rev70-row label{font-weight:800;color:#111827;font-size:13px}.rev70-row input,.rev70-row select{min-width:0}.rev70-inline{display:flex;gap:8px;align-items:center}.rev70-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}.rev70-check b{font-weight:1000;color:#111827!important}.rev70-check input[type="checkbox"]{width:20px;height:20px;accent-color:#0284c7}.rev70-color-input{height:38px;width:74px;padding:2px}
+    .rev70-weekend-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent)),#0b1221!important}.month-cell.rev70-weekend-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent)),#070d1a!important}.rev70-vacation-day{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent)),#0b1221!important}.month-cell.rev70-vacation-cell{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent)),#070d1a!important}body.light .rev70-weekend-day,body.light .rev70-vacation-day{background-color:#f8fbff!important}body.light .month-cell.rev70-weekend-cell,body.light .month-cell.rev70-vacation-cell{background-color:#f8fbff!important}.rev70-weekend-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent),color-mix(in srgb,var(--rev70WeekendColor) var(--rev70WeekendOpacityPercent),transparent)),#050a16!important}.rev70-vacation-timeline{background:linear-gradient(0deg,color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent),color-mix(in srgb,var(--rev70VacationColor) var(--rev70VacationOpacityPercent),transparent)),#050a16!important}
+    @media(max-width:760px){.rev70-settings{grid-template-columns:1fr}.rev70-tabs{flex-direction:row;flex-wrap:wrap}.rev70-tab{width:auto}.rev70-row{grid-template-columns:1fr;gap:5px}}
+  `;
+  document.head.appendChild(style);
+  setTimeout(()=>{ensure70();decorateAll70();},350);
 })();
