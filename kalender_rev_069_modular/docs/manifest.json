@@ -1,0 +1,38 @@
+[
+  {
+    "path": ".env.example",
+    "bytes": 369
+  },
+  {
+    "path": "README.md",
+    "bytes": 1692
+  },
+  {
+    "path": "api/README.md",
+    "bytes": 169
+  },
+  {
+    "path": "assets/architektur-kalender-app.png",
+    "bytes": 1501498
+  },
+  {
+    "path": "css/styles.css",
+    "bytes": 83353
+  },
+  {
+    "path": "index.html",
+    "bytes": 5689
+  },
+  {
+    "path": "js/app.js",
+    "bytes": 503134
+  },
+  {
+    "path": "package.json",
+    "bytes": 233
+  },
+  {
+    "path": "vercel.json",
+    "bytes": 50
+  }
+]
