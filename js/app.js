@@ -1,4 +1,3 @@
-/* Rev 051: Monatslogik, Zeitstrahl-Schrift, eigene Termine bearbeitbar */
 (function(){
   function toDateInputRev51(d){
     const x=new Date(d); if(isNaN(x))return fmtDate(new Date()); return fmtDate(x);
@@ -118,9 +117,9 @@
 
 const SUPABASE_URL='https://peikohfbuxmpxhzmxrbj.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlaWtvaGZidXhtcHhoem14cmJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDA5ODYsImV4cCI6MjA5NDE3Njk4Nn0.KIsmCS19Jiy4DnYLoUyVbKDvJ6hOa_xFCB7CDLQ0vSA';
-const DEFAULT_PROXY_URL='https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
+const DEFAULT_PROXY_URL='https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url=';
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-// Revision 038 relational persistence scaffold
+
 const DB_TABLES={
   appState:'app_state',
   calendarGroups:'calendar_groups',
@@ -355,7 +354,7 @@ function recurrenceMatches(e,date){
   if(r==='none'){if(e.end){const ed=new Date(e.end);ed.setHours(0,0,0,0);if(e.allDay)return td>=sd&&td<ed;return td>=sd&&td<=ed;}return fmtDate(sd)===fmtDate(td);}const diffDays=Math.round((td-sd)/86400000);
   if(r==='weekly')return diffDays%7===0;if(r==='monthly')return td.getDate()===sd.getDate();if(r==='yearly')return td.getDate()===sd.getDate()&&td.getMonth()===sd.getMonth();return false;
 }
-function eventOccurrenceForDate(e,date){if(!recurrenceMatches(e,date))return null;if((!e.rrule)&&((e.recurrence||'none')==='none')&&e.end){const out=Object.assign({},e,{_occurrenceDate:fmtDate(date)});return out;}const startBase=new Date(e.start);const endBase=e.end?new Date(e.end):null;const target=new Date(date);const start=new Date(target.getFullYear(),target.getMonth(),target.getDate(),startBase.getHours(),startBase.getMinutes(),startBase.getSeconds());let end=null;if(endBase&&!isNaN(endBase)){const duration=endBase-startBase;end=new Date(start.getTime()+duration);}return Object.assign({},e,{start:start.toISOString(),end:end?end.toISOString():null,_occurrenceDate:fmtDate(date)});} 
+function eventOccurrenceForDate(e,date){if(!recurrenceMatches(e,date))return null;if((!e.rrule)&&((e.recurrence||'none')==='none')&&e.end){const out=Object.assign({},e,{_occurrenceDate:fmtDate(date)});return out;}const startBase=new Date(e.start);const endBase=e.end?new Date(e.end):null;const target=new Date(date);const start=new Date(target.getFullYear(),target.getMonth(),target.getDate(),startBase.getHours(),startBase.getMinutes(),startBase.getSeconds());let end=null;if(endBase&&!isNaN(endBase)){const duration=endBase-startBase;end=new Date(start.getTime()+duration);}return Object.assign({},e,{start:start.toISOString(),end:end?end.toISOString():null,_occurrenceDate:fmtDate(date)});}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block';clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.style.display='none',4200)}
 function visibleCalendars(){return state.calendars.map((c,i)=>({cal:c,idx:i})).filter(x=>x.cal.visible!==false);}
 function applyAppearance(){ensureSettings();document.body.classList.toggle('light',state.theme==='light');document.body.classList.toggle('sharp-corners',state.cornerStyle==='sharp');document.documentElement.style.setProperty('--eventColor',state.colors.event);document.documentElement.style.setProperty('--taskColor',state.colors.task);document.documentElement.style.setProperty('--overdueColor',state.colors.overdue);document.documentElement.style.setProperty('--longColor',state.colors.long);}
@@ -535,9 +534,8 @@ function openICSModal(pane){if(!requireLogin())return;openModal(`ICS-Link hinzuf
 function openICSLinkModal(pane,idx){const link=state.calendars[pane]?.links?.[idx];if(!link)return;$('#modalTitle').textContent=`ICS-Link · ${link.name}`;$('#modalContent').innerHTML=`<div class="hint">Der Link bleibt in der normalen Übersicht verborgen. Hier kannst du ihn kontrollieren oder kopieren.</div><textarea rows="5" readonly onclick="this.select()">${escapeHtml(link.url)}</textarea>`;$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';}
 async function loadICS(pane){if(!requireLogin())return;const cal=state.calendars[pane];cal.events=[];cal.status='Lade ICS...';renderCalendarConfig();persist();let errors=[];for(const link of (cal.links||[])){if(link.type==='own'||!link.url)continue;try{const sourceUrl=normalizeICSUrl(link.url);const res=await fetch(buildICSFetchUrl(sourceUrl),{cache:'no-store'});if(!res.ok)throw new Error('HTTP '+res.status);const text=await res.text();if(!/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(text))throw new Error('Antwort ist keine ICS-Datei. Link/Freigabe/Proxy prüfen.');const parsed=parseICS(text,link.name).map(e=>Object.assign(e,{icsId:link.id,icsColor:link.color||state.colors.event,icsName:link.name}));cal.events.push(...parsed);if(!parsed.length)errors.push(`${link.name}: ICS geladen, aber keine Termine gefunden.`);}catch(e){errors.push(`${link.name}: ${e.message}`);}}cal.events=dedupeEvents(cal.events);const stamp=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});cal.status=errors.length?`${cal.events.length} Termine geladen. Fehler: ${errors.join(' | ')}. Zuletzt: ${stamp}`:`${cal.events.length} Termine geladen. Zuletzt: ${stamp}`;$('#diagBox').textContent=cal.status;persist();}
 function dedupeEvents(events){const map=new Map();(events||[]).forEach(e=>{const norm=v=>String(v||'').trim().toLowerCase();const key=[e.icsId||'',norm(e.summary),e.start||'',e.end||''].join('|');const old=map.get(key);if(!old||(!old.rrule&&e.rrule))map.set(key,e);});return Array.from(map.values());}
-function normalizeICSUrl(url){return (url||'').trim().replace(/^webcal:\/\//i,'https://');} function buildICSFetchUrl(url){let base=(state.proxyUrl||DEFAULT_PROXY_URL).trim();if(!base)return url;if(!/[?&]url=$/.test(base)){base=base.replace(/\/+$/,'')+'/?url=';}return base+encodeURIComponent(url);}
+function normalizeICSUrl(url){return (url||'').trim().replace(/^webcal:\/\//i,'https:
 async function syncAllICS(){if(!requireLogin())return;const total=state.calendars.reduce((s,c)=>s+(c.links?.length||0),0);if(!total){toast('Keine ICS-Links hinterlegt.');return;}toast('Synchronisierung gestartet...');for(let i=0;i<state.calendars.length;i++)await loadICS(i);render();toast('ICS-Synchronisierung abgeschlossen.');}
-
 
 function openOwnEventModal(pane,date=fmtDate(new Date())){
   if(!requireLogin())return;
@@ -581,7 +579,6 @@ function openEventDetailModal(ref){
   if(del)del.onclick=()=>{if(confirm('Eigenen Termin / Serie löschen?')){cal.ownEvents.splice(Number(evtIdx),1);closeModal();render();}};
 }
 
-
 function openICSSettingsModal(pane,idx){
   const link=state.calendars[pane]?.links?.[idx];
   if(!link)return;
@@ -606,7 +603,6 @@ function openICSSettingsModal(pane,idx){
     closeModal();
   });
 }
-
 
 function openCloudModal(){
   if(!currentUser)document.body.classList.add('login-required');
@@ -636,7 +632,6 @@ function getRawICS(block,key){const m=block.match(new RegExp('^'+key+'(?:;[^:]*)
 function parseICalDate(v){if(!v)return null;let m=v.match(/^(\d{4})(\d{2})(\d{2})$/);if(m){const[_,Y,M,D]=m;return {iso:new Date(+Y,+M-1,+D,0,0,0).toISOString(),allDay:true};}m=v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);if(!m)return null;const[_,Y,M,D,h,mi,s,z]=m;const d=z?new Date(Date.UTC(+Y,+M-1,+D,+h,+mi,+s)):new Date(+Y,+M-1,+D,+h,+mi,+s);return {iso:d.toISOString(),allDay:false};}
 let monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);function openMonthModal(){monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);$('#modalTitle').textContent='Monatsübersicht';$('#modalContent').innerHTML='<div id="monthView"></div>';$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';renderMonthView();}
 function renderMonthView(){const root=$('#monthView');if(!root)return;const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));const days=['Mo','Di','Mi','Do','Fr','Sa','So'];let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done);for(let i=0;i<42;i++){const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();const events=visibleCalendars().flatMap(({cal:c})=>{const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});return [...ics,...own];}).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status}));const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done);const showOverdueBar=sameDay(d,today)&&openOverdueToday;const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${events.slice(0,3).map(e=>`<div class="month-event" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${escapeHtml(shortText(e.summary,38))}</div>`).join('')}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;}html+='</div>';root.innerHTML=html;$('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};$('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};$$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});}
-
 
 function updateSidebarToggle(){
   const collapsed=document.body.classList.contains('sidebar-collapsed');
@@ -669,8 +664,6 @@ function collectSearchItems(){
 function openDateInTimeline(iso){const target=new Date(iso+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();}
 function setupGlobalSearch(){const input=$('#globalSearch'), box=$('#searchResults');if(!input||!box)return;input.oninput=()=>{const q=input.value.trim().toLowerCase();if(q.length<2){box.classList.remove('open');box.innerHTML='';return;}const hits=collectSearchItems().filter(x=>(x.title+' '+x.meta+' '+x.date).toLowerCase().includes(q)).slice(0,18);box.innerHTML=hits.length?hits.map((h,i)=>`<div class="search-hit" data-hit="${i}"><b>${escapeHtml(h.title||'Ohne Titel')}</b><small>${escapeHtml(h.type)} · ${escapeHtml(h.date)} · ${escapeHtml(shortText(h.meta,70))}</small></div>`).join(''):'<div class="search-hit"><small>Keine Treffer.</small></div>';box.classList.add('open');$$('[data-hit]').forEach(el=>el.onclick=()=>{const h=hits[Number(el.dataset.hit)];if(h){input.value='';box.classList.remove('open');openDateInTimeline(h.date);}});};document.addEventListener('click',ev=>{if(!ev.target.closest('.search-wrap'))box.classList.remove('open');});}
 
-
-/* Rev 033: Funktionspatches ohne Eingriff in die ICS-Ladebasis */
 function ensureRev033State(){
   state.longColumns=state.longColumns&&state.longColumns.length?state.longColumns:[{id:'long_default',name:'Allgemein',color:state.colors?.long||defaultColors.long,visible:true}];
   state.longColumns.forEach(c=>{c.id=c.id||makeId('lg');c.name=c.name||'Allgemein';c.color=c.color||state.colors?.long||defaultColors.long;if(c.visible===undefined)c.visible=true;});
@@ -803,9 +796,6 @@ function initConfigBlocks(){
 function updateSidebarToggle(){const collapsed=document.body.classList.contains('sidebar-collapsed');const btn=document.querySelector('#sidebarToggleBtn');if(!btn)return;btn.innerHTML=`<span class="sidebar-toggle-tab">${collapsed?'›':'‹'}</span>`;btn.title=collapsed?'Seitenleiste aufklappen':'Seitenleiste einklappen';}
 function initSidebarToggle(){const saved=localStorage.getItem('kalender_sidebar_collapsed')==='1';document.body.classList.toggle('sidebar-collapsed',saved);updateSidebarToggle();const btn=document.querySelector('#sidebarToggleBtn');if(btn)btn.onclick=()=>{document.body.classList.toggle('sidebar-collapsed');localStorage.setItem('kalender_sidebar_collapsed',document.body.classList.contains('sidebar-collapsed')?'1':'0');updateSidebarToggle();};}
 
-
-
-/* Rev 037: Frontend-State-Persistenz und UI-Logik ohne neue Supabase-Tabellen */
 const __rev037EnsureSettings=ensureSettings;
 ensureSettings=function(){
   __rev037EnsureSettings();
@@ -852,7 +842,7 @@ function updateCollapseAllButton(){
 }
 function initConfigBlocks(){
   ensureSettings();
-  // Rev040 Fix: globaler Einklapp-Button steht statisch oben in der Seitenleiste, nicht unter Ansicht konfigurieren.
+
   $$('.config-block').forEach(block=>{
     const key=block.dataset.configBlock;
     const collapsed=!!state.configCollapsed[key];
@@ -985,12 +975,6 @@ function openSyncSettingsModal(){
   $('#mSyncNow').onclick=async()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;persist();setupAutoSync();applyAppearance();await syncAllICS();};
 }
 
-
-
-/* Rev 039: echte Tabellen-Persistenz + Proxy-404-Fix
-   - App-State speichert nur UI/Ansichtsoptionen.
-   - Fachliche Daten werden als relationaler Snapshot in Supabase-Tabellen gespeichert.
-   - Der ICS-Proxy zeigt bewusst noch auf die vorhandene funktionierende Edge Function, weil im neuen Supabase-Projekt noch keine Function deployed ist. */
 const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 let relationalSaveTimer=null;
 let relationalSaveRunning=false;
@@ -1019,7 +1003,7 @@ function normalizeRelationalIds(){
     if(old&&old!==cal.id)calMap.set(old,cal.id);
     (cal.links||[]).forEach(src=>{
       const so=src.id;
-      if(!isUuid(so)){src.id=newUuid();sourceMap.set(so,src.id);} 
+      if(!isUuid(so)){src.id=newUuid();sourceMap.set(so,src.id);}
       src.calendarGroupId=cal.id;
     });
   });
@@ -1123,7 +1107,6 @@ async function loadRelationalData(){
   state.longterm=(lt.data||[]).map(t=>({id:t.id,title:t.title,note:t.note||'',done:!!t.done,completedDate:t.completed_date||null,columnId:t.long_task_group_id||state.longColumns[0]?.id,createdDate:t.created_at?fmtDate(new Date(t.created_at)):fmtDate(new Date())}));
 }
 
-// App-State speichert ab Rev039 nur noch UI-Einstellungen; fachliche Daten laufen über Tabellen.
 saveStateToCloud=async function(){
   if(!currentUser)return setCloudStatus('Nicht angemeldet. Online-Speicherung nicht möglich.','bad');
   const payload={user_id:currentUser.id,state:uiStateOnly(),updated_at:new Date().toISOString()};
@@ -1148,13 +1131,11 @@ loadStateFromCloud=async function(){
   }finally{suppressCloudSave=false;}
 };
 
-// Persistenz: UI-State + relationaler Snapshot werden beide geschrieben.
 persist=function(){
   if(currentUser){localStorage.setItem(storeKey,JSON.stringify(uiStateOnly()));}else{localStorage.removeItem(storeKey);}
   if(cloudReady&&currentUser&&!suppressCloudSave){scheduleCloudSave();scheduleRelationalSave();}
 };
 
-// Kalendergruppen standardmäßig einklappbar machen, ohne Quellen aus der DB zu verlieren.
 const __rev39_renderCalendarConfig=renderCalendarConfig;
 renderCalendarConfig=function(){
   __rev39_renderCalendarConfig();
@@ -1171,7 +1152,6 @@ renderCalendarConfig=function(){
   });
 };
 
-// Bestehende Neuanlage von Kalenderquellen schreibt sofort in die Tabellen, damit der Eintrag direkt in calendar_sources sichtbar ist.
 openICSModal=function(pane){
   if(!requireLogin())return;
   openModal(`ICS-Link hinzufügen · ${state.calendars[pane].name}`,`<input id="mName" placeholder="Name, z. B. Privat Kalender"><input id="mUrl" placeholder="webcal://... oder https://.../calendar.ics"><div class="hint">Der Link wird sofort in calendar_sources gespeichert. Danach wird der ICS-Kalender über den Proxy geladen.</div>`,async()=>{
@@ -1197,11 +1177,8 @@ openCreateOwnSourceModal=function(pane){
   });
 };
 
-// Proxy-Build robuster: falls versehentlich /rest/v1/ eingetragen wäre, wird trotzdem die fest gesetzte Edge Function genutzt.
 buildICSFetchUrl=function(url){const sourceUrl=normalizeICSUrl(url);return DEFAULT_PROXY_URL+encodeURIComponent(sourceUrl);};
 
-
-/* Rev 040: Design-/Bedienrevision - Funktionspatches */
 function openNativeColorPicker(initial,onPick){
   const input=document.createElement('input');
   input.type='color'; input.className='hidden-color-input'; input.value=initial||'#7c5cff';
@@ -1214,7 +1191,6 @@ function colorBucketButtonHtml(color,attr='data-color-bucket'){
   return `<button type="button" class="btn small color-bucket-btn" ${attr} title="Weitere Farbe wählen">🪣</button><span class="color-bucket-preview" style="background:${escapeHtml(color||'#7c5cff')}"></span>`;
 }
 
-// Kalendergruppen-Collapse oben rechts statt in der Aktionszeile
 const __rev40_renderCalendarConfig=renderCalendarConfig;
 renderCalendarConfig=function(){
   __rev40_renderCalendarConfig();
@@ -1228,7 +1204,6 @@ renderCalendarConfig=function(){
   });
 };
 
-// Tagestask-Konfiguration: Farbe für überzogene Tagestasks ergänzen
 const __rev40_renderTaskColumnConfig=renderTaskColumnConfig;
 renderTaskColumnConfig=function(){
   __rev40_renderTaskColumnConfig();
@@ -1242,7 +1217,6 @@ renderTaskColumnConfig=function(){
   }
 };
 
-// Task-/Long-/ICS-Farbmodal: zusätzlichen Farbeimer nach vorhandenen Paletten ermöglichen
 function attachPaletteBucket(scopeSelector, targetObj, prop='color', fallback='#7c5cff'){
   const wrap=document.querySelector(scopeSelector); if(!wrap||wrap.dataset.bucketReady)return; wrap.dataset.bucketReady='1';
   const bucket=document.createElement('div'); bucket.style.marginTop='8px'; bucket.innerHTML=colorBucketButtonHtml(targetObj?.[prop]||fallback);
@@ -1258,7 +1232,6 @@ openICSSettingsModal=function(pane,idx){__rev40_openICSSettingsModal(pane,idx);s
 const __rev40_openOwnSourceModal=openOwnSourceModal;
 openOwnSourceModal=function(pane,idx){__rev40_openOwnSourceModal(pane,idx);setTimeout(()=>{const obj=state.calendars[pane]?.links?.[idx]||{};attachPaletteBucket('[data-own-color-picker]',obj,'color',state.colors?.event||defaultColors.event);},0);};
 
-// Robusteres Dedupe: zusätzlich bei Tagesdarstellung nach tatsächlicher Occurrence deduplizieren
 function dedupeOccurrences(events){
   const map=new Map(); const norm=v=>String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
   (events||[]).forEach(e=>{
@@ -1272,7 +1245,7 @@ function dedupeOccurrences(events){
 }
 const __rev40_calendarLanes=calendarLanes;
 calendarLanes=function(date){
-  // Kopie der Originallogik mit deduplizierter Eventliste
+
   const iso=fmtDate(date);const visible=visibleCalendars();return visible.map(({cal,idx:ci})=>{
     const visibleOwnIds=(cal.links||[]).filter(l=>l.type==='own'&&l.visible!==false).map(l=>l.id);
     const icsEvents=(cal.events||[]).map((e,ei)=>{const occ=eventOccurrenceForDate(e,date);return occ?Object.assign(occ,{_type:'ics',_cal:ci,_idx:ei}):null;}).filter(e=>{if(!e)return false;const l=(cal.links||[]).find(x=>x.id===e.icsId);return (!l||l.visible!==false);});
@@ -1283,14 +1256,12 @@ calendarLanes=function(date){
   }).join('');
 };
 
-// Login per Enter in E-Mail-/Passwortfeld
 const __rev40_openCloudModal=openCloudModal;
 openCloudModal=function(){
   __rev40_openCloudModal();
   setTimeout(()=>{['#cloudEmail','#cloudPassword'].forEach(sel=>{const el=$(sel); if(el)el.onkeydown=(e)=>{if(e.key==='Enter'){e.preventDefault();cloudLogin();}};});},0);
 };
 
-// Einstellungen: Sicherheitshinweis + mehr Erscheinungsoptionen
 openSyncSettingsModal=function(){
   openModal('Allgemeine Einstellungen',`<div class="settings-grid"><div class="field"><label>Erscheinung</label><select id="mTheme"><option value="light">Hell</option><option value="dark">Dunkel</option><option value="blue">Bläulich</option><option value="red">Rötlich</option><option value="green">Grünlich</option></select></div><div class="field"><label>Kanten</label><select id="mCornerStyle"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="section-title">Synchronisierung</div><button class="btn primary" id="mSyncNow" type="button">Alle ICS-Links aktualisieren</button><div class="field"><label>Intervall</label><select id="mSyncInterval"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><div class="hint" id="mSyncHint">ICS-Links werden über den intern fest hinterlegten Proxy geladen.</div><div class="security-note"><b>Datenschutzhinweis:</b> Kalenderbezogene Informationen wie Kalenderquellen, ICS-Links, Tasks und eigene Termine liegen nutzerbezogen in der Datenbank. Der Entwickler könnte diese Daten hypothetisch administrativ aus der Datenbank auslesen, tut dies aber nicht. <br><br><b>Wichtig:</b> Passwörter und Anmeldeinformationen können nicht angezeigt werden. Die Authentifizierung wird über Supabase Auth verwaltet; Passwörter liegen nicht im Klartext vor.</div></div>`,()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;setupAutoSync();});
   $('#mTheme').value=state.theme||'light';$('#mCornerStyle').value=state.cornerStyle||'rounded';$('#mSyncInterval').value=String(state.syncInterval??15);
@@ -1304,7 +1275,6 @@ applyAppearance=function(){
   document.body.classList.toggle('theme-green',state.theme==='green');
 };
 
-// Modus-Konfiguration: Modusauswahl + Löschen, Kalender-Haken in Titelzeile, Unterkalender behalten ihre Haken
 function syncModeChildrenInModal(){
   $$('[data-mode-cal]').forEach(parent=>{
     const section=parent.closest('.mode-config-calgroup'); if(!section)return;
@@ -1350,15 +1320,6 @@ openViewModeConfigModal=function(id){
   };
 };
 
-
-
-/* Rev 041: Schutz gegen unbeabsichtigtes Löschen tabellarischer Fachdatensätze
-   Problemursache: Der bisherige relationale Snapshot hat nicht nur geupsertet,
-   sondern auch alle Tabellenzeilen gelöscht, die im aktuellen Frontend-State fehlten.
-   Wenn ein Reload/Versionswechsel/Load-Fehler kurzzeitig einen leeren state.tasks erzeugt,
-   konnten dadurch vorhandene Tagestasks aus Supabase verschwinden.
-   Korrektur: Snapshot-Speicherung löscht nichts mehr automatisch. Löschungen erfolgen nur noch
-   explizit über Nutzeraktionen und dann gezielt per DELETE auf der passenden Tabelle. */
 async function dbDeleteRowRev041(table,id){
   if(!currentUser||!id)return;
   const {error}=await supabaseClient.from(table).delete().eq('user_id',currentUser.id).eq('id',id);
@@ -1369,16 +1330,15 @@ async function dbUpdateRowRev041(table,id,values){
   const {error}=await supabaseClient.from(table).update(values).eq('user_id',currentUser.id).eq('id',id);
   if(error){console.error('UPDATE fehlgeschlagen',table,id,error);toast('Speichern in Tabelle fehlgeschlagen: '+error.message);}
 }
-// WICHTIG: kein automatisches Tabellen-Bereinigungs-DELETE mehr beim Snapshot.
+
 deleteMissing=async function(table,ids){ return; };
-// Schnellere, aber weiterhin entprellte Speicherung.
+
 scheduleRelationalSave=function(){
   if(!currentUser||suppressCloudSave)return;
   clearTimeout(relationalSaveTimer);
   relationalSaveTimer=setTimeout(saveRelationalSnapshot,150);
 };
 
-// Tagestask-Tageskarte mit expliziter Tabellenlöschung und sofortigem Update beim Abhaken.
 dayCard=function(date){
   const today=new Date();today.setHours(0,0,0,0);const iso=fmtDate(date);
   const visibleTaskIds=(state.taskColumns||[]).filter(c=>c.visible!==false).map(c=>c.id);
@@ -1399,7 +1359,6 @@ dayCard=function(date){
   return day;
 };
 
-// Langfristige Tasks: explizites DELETE statt indirektem Snapshot-Löschen.
 const __rev041_renderLong=renderLong;
 renderLong=function(){
   __rev041_renderLong();
@@ -1407,7 +1366,6 @@ renderLong=function(){
   $$('[data-toggle-long]').forEach(c=>{c.onchange=async(ev)=>{ev.stopPropagation();const t=state.longterm.find(x=>x.id===c.dataset.toggleLong);if(!requireLogin()){c.checked=!c.checked;return;}if(t){t.done=c.checked;t.completedDate=c.checked?fmtDate(new Date()):null;render();await dbUpdateRowRev041('long_tasks',t.id,{done:!!t.done,completed_date:t.completedDate||null});scheduleRelationalSave();}}});
 };
 
-// Kalendergruppen und Kalenderquellen: Löschungen nur gezielt per Nutzeraktion.
 const __rev041_renderCalendarConfig=renderCalendarConfig;
 renderCalendarConfig=function(){
   __rev041_renderCalendarConfig();
@@ -1425,7 +1383,6 @@ renderCalendarConfig=function(){
   $$('[data-delete-cal]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();if(!requireLogin())return;const i=Number(b.dataset.deleteCal);const cal=state.calendars[i];if(!cal)return;if(!confirm('Kalender inklusive aller Quellen und eigenen Terminen löschen?'))return;state.calendars.splice(i,1);render();await dbDeleteRowRev041('calendar_groups',cal.id);});
 };
 
-// Gruppenlöschung: zuerst betroffene Tasks lokal und tabellarisch auf Fallback-Gruppe verschieben, dann Gruppe gezielt löschen.
 const __rev041_renderTaskColumnConfig=renderTaskColumnConfig;
 renderTaskColumnConfig=function(){
   __rev041_renderTaskColumnConfig();
@@ -1437,8 +1394,6 @@ renderLongColumnConfig=function(){
   $$('[data-delete-longcol]').forEach(b=>b.onclick=async()=>{if(!requireLogin())return;const idx=Number(b.dataset.deleteLongcol);if(state.longColumns.length<=1)return toast('Mindestens eine langfristige Gruppe bleibt erhalten.');const col=state.longColumns[idx];if(!confirm('Langfristige Gruppe löschen? Bestehende Tasks werden in die erste verfügbare Gruppe verschoben.'))return;const fallback=state.longColumns.find((_,i)=>i!==idx)?.id||null;state.longterm.forEach(t=>{if(t.columnId===col.id)t.columnId=fallback;});state.longColumns.splice(idx,1);render();if(fallback)await supabaseClient.from('long_tasks').update({long_task_group_id:fallback}).eq('user_id',currentUser.id).eq('long_task_group_id',col.id);await dbDeleteRowRev041('long_task_groups',col.id);scheduleRelationalSave();});
 };
 
-
-/* Rev 042 Sicherheitsfix: Tabellen sind Quelle der Wahrheit, keine Löschung bei Reload/Schließen. */
 let relationalDataLoadedRev042=false;
 const __rev042_loadStateFromCloud=loadStateFromCloud;
 loadStateFromCloud=async function(){
@@ -1447,14 +1402,12 @@ loadStateFromCloud=async function(){
   if(currentUser) relationalDataLoadedRev042=true;
 };
 
-// Relationale Speicherung darf nur nach vollständig geladenen Tabellen laufen.
 scheduleRelationalSave=function(){
   if(!currentUser||suppressCloudSave||!relationalDataLoadedRev042)return;
   clearTimeout(relationalSaveTimer);
   relationalSaveTimer=setTimeout(saveRelationalSnapshot,180);
 };
 
-// Vollständig entschärfter Snapshot: nur UPSERT, niemals automatisches DELETE.
 saveRelationalSnapshot=async function(){
   if(!currentUser||suppressCloudSave||!relationalDataLoadedRev042)return;
   if(relationalSaveRunning){relationalSaveQueued=true;return;}
@@ -1488,21 +1441,13 @@ saveRelationalSnapshot=async function(){
   }
 };
 
-// AppState bleibt UI-only. Fachdatenspeicherung wird nicht beim Entladen erzwungen.
 persist=function(){
   if(currentUser){localStorage.setItem(storeKey,JSON.stringify(uiStateOnly()));}else{localStorage.removeItem(storeKey);}
   if(cloudReady&&currentUser&&!suppressCloudSave){scheduleCloudSave();}
 };
 
-// Sicherheitsregel: Beim Schließen/Reload niemals signOut/reset/render/save auslösen.
 function noopPagehideRev042(){ localStorage.removeItem(storeKey); }
 
-
-
-/* Rev 043 Sicherheitsfix Multi-Gerät: Keine Frontend-Snapshots mehr für Fachdaten.
-   Datenbanktabellen sind Quelle der Wahrheit. Fachliche Änderungen laufen nur noch
-   über gezielte INSERT/UPDATE/DELETE-Operationen. Dadurch kann ein zweites Gerät
-   mit leerem/teilgeladenem State keine Task-Tabelle mehr überschreiben oder leeren. */
 function currentTaskGroupIdRev043(){
   ensureSettings();
   const g=(state.taskColumns||[]).find(x=>isUuid(x.id))||(state.taskColumns||[])[0];
@@ -1555,7 +1500,6 @@ async function updateLongTaskRev043(id,patch){
   if(error)throw error;
 }
 
-// Keine automatischen Fachdatensnapshots mehr. AppState speichert weiterhin nur UI.
 scheduleRelationalSave=function(){ return; };
 saveRelationalSnapshot=async function(){ return; };
 persist=function(){
@@ -1563,7 +1507,6 @@ persist=function(){
   if(cloudReady&&currentUser&&!suppressCloudSave){scheduleCloudSave();}
 };
 
-// Tagestask-Anlage: erst Datenbank INSERT, dann lokaler State. Kein Snapshot.
 openTaskModal=function(date=fmtDate(new Date())){
   if(!requireLogin())return;ensureSettings();
   openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea>`,async()=>{
@@ -1576,7 +1519,6 @@ openTaskModal=function(date=fmtDate(new Date())){
   });
 };
 
-// Langfristige Task-Anlage: erst Datenbank INSERT, dann lokaler State. Kein Snapshot.
 openLongModal=function(){
   if(!requireLogin())return;ensureRev033State();
   openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><select id="mLongColumn">${state.longColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><textarea id="mNote" rows="3" placeholder="Notiz"></textarea>`,async()=>{
@@ -1589,7 +1531,6 @@ openLongModal=function(){
   });
 };
 
-// Task-Detail: Änderungen gezielt per UPDATE/INSERT/DELETE speichern.
 openTaskDetailModal=function(ref){
   if(!requireLogin())return;ensureRev033State();
   const [type,id]=ref.split(':');const isLong=type==='long';
@@ -1632,13 +1573,10 @@ openTaskDetailModal=function(ref){
   $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();$('#saveModal').click();}};
 };
 
-
-
-/* Rev 044: UI-Korrekturen ohne Änderung der Tabellenarchitektur */
 const __rev044_loadRelationalData=loadRelationalData;
 loadRelationalData=async function(){
   await __rev044_loadRelationalData();
-  // Beim frischen Öffnen standardmäßig Kalendergruppen einklappen; Quellen bleiben erhalten.
+
   (state.calendars||[]).forEach(c=>{c.collapsed=true;});
 };
 
@@ -1660,7 +1598,7 @@ renderTaskColumnConfig=function(){
   const row=root.querySelector('.overdue-color-row');
   const add=root.querySelector('.add-calendar-box');
   if(row){
-    // Überzogene Tasks immer nach der letzten Gruppe, aber vor dem Hinzufügen-Block.
+
     if(add)root.insertBefore(row,add); else root.appendChild(row);
     row.querySelector('span:last-child')?.style.setProperty('font-size','13px','important');
   }
@@ -1670,7 +1608,7 @@ const __rev044_renderCalendarConfig=renderCalendarConfig;
 renderCalendarConfig=function(){
   __rev044_renderCalendarConfig();
   $$('.calendar-pane').forEach(pane=>{
-    // Kalenderquellen sollen beim ersten Rendern eingeklappt bleiben, manuelles Öffnen bleibt in der Session möglich.
+
     const btn=pane.querySelector('[data-collapse-cal]');
     if(btn)btn.classList.add('cal-collapse-corner');
   });
@@ -1678,8 +1616,6 @@ renderCalendarConfig=function(){
 
 window.addEventListener('pagehide',noopPagehideRev042);
 
-
-/* Rev 045: zentrierter Farbdialog statt Browser-Farbpicker */
 const rev045ExtendedPalette=[
   '#7c5cff','#39bdf8','#22c55e','#ffb020','#ff5050','#ec4899','#14b8a6','#f97316','#a855f7','#64748b','#111827','#ffffff',
   '#ef4444','#dc2626','#b91c1c','#fb7185','#f43f5e','#e11d48','#f97316','#ea580c','#c2410c','#f59e0b','#d97706','#b45309',
@@ -1731,7 +1667,6 @@ openNativeColorPicker=function(initial,onPick){
   setTimeout(()=>input.focus(),0);
 };
 
-/* Rev 045: Überzogene Tasks in der Konfiguration unten halten */
 const __rev045_renderTaskColumnConfig=renderTaskColumnConfig;
 renderTaskColumnConfig=function(){
   __rev045_renderTaskColumnConfig();
@@ -1744,9 +1679,6 @@ renderTaskColumnConfig=function(){
   }
 };
 
-
-
-/* Rev 046: Datumsausgabe, Settings ohne manuellen ICS-Button, Own-Events INSERT, Projekt-Vorbereitung */
 function dateDERev046(value){
   if(!value)return '';
   let d=value instanceof Date?new Date(value):new Date(String(value).includes('T')?String(value):String(value)+'T00:00:00');
@@ -1881,9 +1813,6 @@ renderLong=function(){
   }
 };
 
-
-
-/* Rev 047: Projekte, Projekt-Tasks und Audit-Logs */
 function ensureProjectsRev047(){
   state.projects=Array.isArray(state.projects)?state.projects:[];
   state.projectTasks=Array.isArray(state.projectTasks)?state.projectTasks:[];
@@ -2163,8 +2092,6 @@ supabaseClient.auth.onAuthStateChange((event,session)=>{
 });
 initCloud();
 
-
-/* Rev 048: Projekt-Tasks werden bei überzogenen Tasks mitgeführt */
 function overdueProjectTasksHtmlRev048(today){
   ensureProjectsRev047();
   const todayIso=fmtDate(today);
@@ -2204,9 +2131,6 @@ dayCard=function(date){
   return day;
 };
 
-
-
-/* Rev 049: Zeitstrahl unter Seitenleiste + Projektübersicht */
 (function(){
   function ensureRev049State(){
     if(!['light','dark'].includes(state.theme))state.theme='light';
@@ -2243,7 +2167,7 @@ dayCard=function(date){
     const groups=[];
     items.forEach(it=>{
       let g=groups.find(gr=>it.start<gr.maxEnd && it.end>gr.minStart);
-      if(!g){g={items:[],minStart:it.start,maxEnd:it.end};groups.push(g);} 
+      if(!g){g={items:[],minStart:it.start,maxEnd:it.end};groups.push(g);}
       g.items.push(it);g.minStart=Math.min(g.minStart,it.start);g.maxEnd=Math.max(g.maxEnd,it.end);
     });
     groups.forEach(g=>{
@@ -2261,7 +2185,7 @@ dayCard=function(date){
     ensureRev049State();
     const sidebar=document.querySelector('.sidebar'); if(!sidebar)return;
     let box=document.querySelector('#sidebarDayTimelineRev049');
-    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);} 
+    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);}
     const today=new Date();today.setHours(0,0,0,0);
     const events=layoutOverlapRev049(visibleTimelineEventsRev049(today));
     const pxPerMin=0.55, totalH=1440*pxPerMin;
@@ -2320,9 +2244,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev049State();renderSidebarTimelineRev049();bindProjectCardsRev049();},150);
 })();
 
-
-
-/* Rev 050: bereinigter Tages-Zeitstrahl, Projekt-Tasks in Partition 2, Overdue-Projekt-Tasks, einklappbare erledigte Tasks */
 (function(){
   function ensureRev050State(){
     if(!state) return;
@@ -2389,7 +2310,7 @@ dayCard=function(date){
     ensureRev050State();
     const sidebar=document.querySelector('.sidebar'); if(!sidebar)return;
     let box=document.querySelector('#sidebarDayTimelineRev049');
-    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);} 
+    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);}
     const today=new Date();today.setHours(0,0,0,0);
     const events=layoutOverlapRev050(visibleTimelineEventsRev050(today));
     const pxPerMin=0.55,totalH=1440*pxPerMin,step=Number(state.timelineStep||30);
@@ -2462,9 +2383,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev050State();renderSidebarTimelineRev050();},200);
 })();
 
-
-
-/* Rev 051: Monatslogik, Zeitstrahl-Schrift, eigene Termine bearbeitbar */
 (function(){
   function toDateInputRev51(d){
     const x=new Date(d); if(isNaN(x))return fmtDate(new Date()); return fmtDate(x);
@@ -2582,9 +2500,6 @@ dayCard=function(date){
   };
 })();
 
-
-
-/* Rev 052: Zeitstrahl-Tagwechsel, App-State-Zeitstrahlwerte, Settings-Reiter, Konturen, Urlaubstage, erledigte Task-Snapshots */
 (function(){
   const REV52_PALETTE=['#7c5cff','#39bdf8','#22c55e','#ffb020','#ff5050','#ec4899','#14b8a6','#f97316','#a855f7','#64748b','#111827','#ffffff'];
   const OUTLINE_OPTIONS={current:'Wie aktuell',black:'Schwarz',gray:'Grau'};
@@ -2683,7 +2598,7 @@ dayCard=function(date){
     ensureRev52State();
     const sidebar=document.querySelector('.sidebar'); if(!sidebar)return;
     let box=document.querySelector('#sidebarDayTimelineRev049');
-    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);} 
+    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);}
     const shown=selectedTimelineDateRev52();
     const events=layoutEvents52(timelineEventsForDate52(shown));
     const pxPerMin=0.55,totalH=1440*pxPerMin,step=Number(state.timelineStep||30),lines=[];
@@ -2756,9 +2671,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev52State();applyAppearance();renderSidebarTimelineRev050();},250);
 })();
 
-
-
-/* Rev 053: Settings-Modal wirklich an Optionen > Einstellungen anbinden, Konturfarbe + Urlaubs-Lowlight in Allgemein */
 (function(){
   function ensureRev53State(){
     state.outlineStyle=state.outlineStyle||'current';
@@ -2846,8 +2758,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev53State();applyAppearance();},200);
 })();
 
-
-/* Rev 054: completed_tasks als echte Verlaufstabelle + kontrolliertes Wiederöffnen */
 (function(){
   const COMPLETED_TABLE_REV54='completed_tasks';
 
@@ -2993,8 +2903,7 @@ dayCard=function(date){
 
   const oldSaveSnapshotRev54=saveRelationalSnapshot;
   saveRelationalSnapshot=async function(){
-    // completed_tasks wird absichtlich nicht per Snapshot überschrieben.
-    // Erledigungen werden nur durch explite Aktionen INSERT/DELETE bewegt.
+
     await oldSaveSnapshotRev54();
   };
 
@@ -3056,21 +2965,15 @@ dayCard=function(date){
     });
   };
 
-  // Detailfenster: completed-Archiv aus App-State bleibt lesbar, neue Tabelle ist führend.
   window.loadCompletedTasksRev54=loadCompletedTasksRev54;
   window.reopenCompletedTaskRev54=reopenCompletedTaskRev54;
   window.completeTaskToTableRev54=completeTaskToTableRev54;
   ensureRev54State();
 })();
 
-
-
-/* Rev 055: UUID-Reparatur für Gruppen, korrektes Wiederöffnen erledigter Tasks, Long-Task-Zielgruppe fix, alte AppState-Erledigt-Snapshots deaktiviert */
 (function(){
   const COMPLETED_TABLE_REV55='completed_tasks';
 
-  // Die alte Rev52-AppState-Archivfunktion wird ab jetzt bewusst stillgelegt.
-  // completed_tasks ist die führende Historientabelle.
   window.markTaskDoneSnapshotRev52=function(){ return; };
   function clearLegacyCompletedArchiveRev55(){
     if(state && Array.isArray(state.completedTaskArchive) && state.completedTaskArchive.length){
@@ -3107,7 +3010,6 @@ dayCard=function(date){
       (state.tasks||[]).forEach(t=>{ if(String(t.columnId||'')===oldId)t.columnId=newId; });
     }
 
-    // Bereits geladene completed_tasks auf die reparierte UUID umbiegen, damit Wiederöffnen künftig stabil bleibt.
     (state.completedTasksTable||[]).forEach(c=>{
       const sameId=String(c.originalGroupId||'')===oldId;
       const sameName=groupName && String(c.originalGroupName||'')===String(groupName||'');
@@ -3119,7 +3021,6 @@ dayCard=function(date){
     const {error}=await supabaseClient.from(rev55Table(kind)).upsert(row,{onConflict:'id'});
     if(error)throw error;
 
-    // Falls Archivzeilen noch die alte Pseudo-ID gespeichert haben, reparieren wir sie ebenfalls.
     await supabaseClient.from(COMPLETED_TABLE_REV55)
       .update({original_group_id:newId})
       .eq('user_id',currentUser.id)
@@ -3135,7 +3036,6 @@ dayCard=function(date){
     return await ensureGroupUuidRev55(kind,g.id,c.originalGroupName,c.originalGroupColor);
   }
 
-  // Insert-Funktionen überschreiben: ausgewählte Gruppe bleibt erhalten, auch wenn sie aus alten AppState-IDs stammt.
   insertTaskRev043=async function(task){
     if(!currentUser)throw new Error('Nicht angemeldet');
     const gid=await ensureGroupUuidRev55('task',task.columnId,'',null);
@@ -3192,7 +3092,6 @@ dayCard=function(date){
     }
   }
 
-  // completed_tasks-Checkboxen nach Rev54 erneut binden, damit die reparierte Wiederöffnen-Logik greift.
   const oldDayCardRev55=dayCard;
   dayCard=function(date){
     const node=oldDayCardRev55(date);
@@ -3204,7 +3103,6 @@ dayCard=function(date){
     return node;
   };
 
-  // Long-Task-Modal explizit neu binden, damit die gewählte Gruppe nicht auf die erste Gruppe zurückfällt.
   openLongModal=function(){
     if(!requireLogin())return;ensureRev033State();
     openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><select id="mLongColumn">${state.longColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><textarea id="mNote" rows="3" placeholder="Notiz"></textarea>`,async()=>{
@@ -3223,9 +3121,6 @@ dayCard=function(date){
   window.ensureGroupUuidRev55=ensureGroupUuidRev55;
 })();
 
-
-
-/* Rev 056: Settings-Bereinigung, App-State-Farben, Serverzeit, Completed-Tasks für alle Tasktypen, UI-Politur */
 (function(){
   const COMPLETED_TABLE_REV56='completed_tasks';
   const NATIVE_DATE_REV56=window.Date;
@@ -3262,7 +3157,6 @@ dayCard=function(date){
     document.documentElement.style.setProperty('--todayFillOpacityPercent56',(Math.round(Math.max(0,Math.min(0.65,Number(state.todayHighlight.opacity||0.18)))*100))+'%');
   };
 
-  // Best-Effort-Web-/Serverzeit: nutzt den Date-Header des Supabase-Projekts. Fallback bleibt Geräteeinstellung.
   async function syncServerTimeRev56(){
     try{
       const res=await fetch(SUPABASE_URL,{method:'HEAD',cache:'no-store'});
@@ -3278,7 +3172,7 @@ dayCard=function(date){
       }
     }catch(e){console.warn('Serverzeit konnte nicht geladen werden',e);}
   }
-  // Date patch bewusst erst nach erfolgreicher Plausibilität. Parsing mit Argumenten bleibt nativ.
+
   if(!window.__rev56DatePatched){
     window.__rev56DatePatched=true;
     const Native=NATIVE_DATE_REV56;
@@ -3376,7 +3270,6 @@ dayCard=function(date){
     const opt=document.querySelector('[data-config-block="opt"] .config-content > div'); if(opt)opt.style.gridTemplateColumns='1fr 1fr';
   }
 
-  // Ganztägige eigene Termine: Endzeit 23:59 desselben Tags darf die Anzeige nicht verhindern.
   const oldRecurrenceMatches56=recurrenceMatches;
   recurrenceMatches=function(e,date){
     if(e&&e.allDay&&!e.rrule&&((e.recurrence||'none')==='none')){
@@ -3425,9 +3318,9 @@ dayCard=function(date){
     if(error){toast('Erledigter Task konnte nicht gespeichert werden: '+error.message);throw error;}
     const completed={completedId:data.id,originalTaskId:data.original_task_id,type:data.task_type,title:data.title,note:data.note||'',originalDate:data.original_date||null,completedDate:data.completed_date||fmtDate(new Date()),originalGroupId:data.original_group_id||'',originalGroupName:data.original_group_name||'Unbekannte Gruppe',originalGroupColor:data.original_group_color||null,createdAt:data.created_at||null};
     state.completedTasksTable=state.completedTasksTable||[];state.completedTasksTable.unshift(completed);
-    if(type==='long'){state.longterm=(state.longterm||[]).filter(x=>x.id!==t.id);await dbDeleteRowRev041('long_tasks',t.id);} 
-    else if(type==='project'){state.projectTasks=(state.projectTasks||[]).filter(x=>x.id!==t.id);await deleteProjectTaskRev047(t.id);} 
-    else {state.tasks=(state.tasks||[]).filter(x=>x.id!==t.id);await dbDeleteRowRev041('tasks',t.id);} 
+    if(type==='long'){state.longterm=(state.longterm||[]).filter(x=>x.id!==t.id);await dbDeleteRowRev041('long_tasks',t.id);}
+    else if(type==='project'){state.projectTasks=(state.projectTasks||[]).filter(x=>x.id!==t.id);await deleteProjectTaskRev047(t.id);}
+    else {state.tasks=(state.tasks||[]).filter(x=>x.id!==t.id);await dbDeleteRowRev041('tasks',t.id);}
     render();
   }
   async function deleteCompleted56(id){
@@ -3479,7 +3372,7 @@ dayCard=function(date){
   dayCard=function(date){
     const node=oldDayCard56(date);
     const iso=fmtDate(date);
-    // alte App-State-/aktive erledigte Projektcards entfernen; completed_tasks ist führend.
+
     node.querySelectorAll('.project-task-item.done').forEach(el=>el.remove());
     node.querySelectorAll('.completed-table-grid-rev54').forEach(el=>el.remove());
     const html=completedHtmlForDay56(iso);
@@ -3504,7 +3397,6 @@ dayCard=function(date){
   const oldRenderProjects56=typeof renderProjectsRev047==='function'?renderProjectsRev047:null;
   if(oldRenderProjects56){renderProjectsRev047=function(){oldRenderProjects56();bindCompletedAndProject56(document.querySelector('#projectsSectionRev047')||document);};}
 
-  // Zeitstrahlwerte sofort überschreiben.
   const oldRenderSidebarTimeline56=renderSidebarTimelineRev050;
   renderSidebarTimelineRev050=function(){
     oldRenderSidebarTimeline56();
@@ -3514,7 +3406,6 @@ dayCard=function(date){
   const oldOpenTimelineSettings56=typeof openTimelineSettingsRev52==='function'?openTimelineSettingsRev52:null;
   if(oldOpenTimelineSettings56){openTimelineSettingsRev52=function(){oldOpenTimelineSettings56();setTimeout(()=>{const step=document.querySelector('#timelineStepModalRev52');const pause=document.querySelector('#timelinePauseModalRev52');if(step)step.onchange=()=>{state.timelineStep=Number(step.value||30);persist();};if(pause)pause.oninput=()=>{state.timelinePauseMinutes=Math.max(0,Number(pause.value||0));persist();};},0);};}
 
-  // Eigener Termin: Löschbutton links in Modal-Aktionsleiste als quadratischer Mülleimer.
   function moveOwnDeleteButton56(){
     const del=document.querySelector('#deleteOwnFromEditRev51'); const actions=document.querySelector('.modal-actions');
     if(del&&actions&&!del.classList.contains('own-delete-square56')){
@@ -3524,7 +3415,6 @@ dayCard=function(date){
   }
   new MutationObserver(moveOwnDeleteButton56).observe(document.body,{childList:true,subtree:true});
 
-  // Klick-Cursor und Unterstreichung für alle Task-/Projektkarten.
   function decorateClickableTasks56(){
     document.querySelectorAll('[data-task-ref],[data-project-task-ref],[data-completed-ref]').forEach(el=>el.classList.add('task-clickable56'));
   }
@@ -3541,9 +3431,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev56State();bindOptions56();applyAppearance();decorateClickableTasks56();syncServerTimeRev56().then(()=>{applyAppearance();render();});},300);
 })();
 
-
-
-/* Rev 057: Persistenz-/UI-Korrekturen nach Test */
 (function(){
   function safeColor57(v,fallback){return /^#[0-9a-f]{6}$/i.test(String(v||''))?String(v):fallback;}
   function ensureRev57State(){
@@ -3727,7 +3614,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev57State();const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettingsRev57;cleanupTrashButtons57();bindTimelinePersistence57();saveUiState57();},250);
 })();
 
-/* Rev 058: Stabiler Editor für eigene Termine ohne Rev057-MutationObserver-Schleife */
 (function(){
   function rev58IsUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));}
   function rev58DateInput(v){const d=new Date(v); if(isNaN(d))return fmtDate(new Date()); return fmtDate(d);}
@@ -3839,7 +3725,6 @@ dayCard=function(date){
   document.head.appendChild(style);
 })();
 
-/* Rev 059: Projekt-Task-Seitenfarbe + Papierkorb nur im eigenen Termin-Editor */
 (function(){
   function rev59ProjectColorForTask(id){
     try{
@@ -3854,7 +3739,7 @@ dayCard=function(date){
       el.style.setProperty('border-left-color',color,'important');
       el.style.setProperty('border-left-width','4px','important');
       el.style.setProperty('border-left-style','solid','important');
-      // normale Kartenoptik behalten: nur linke Farbleiste projektabhängig.
+
       if(document.body.classList.contains('light')){
         el.style.setProperty('background','#f8fbff','important');
         el.style.setProperty('border-top-color','#cbd6e7','important');
@@ -3917,7 +3802,6 @@ dayCard=function(date){
   },250);
 })();
 
-/* Rev 060: Persistenz der allgemeinen Einstellungen explizit über Speichern + Zeitstrahlwerte zuverlässig im App-State */
 (function(){
   function isHex60(v){return /^#[0-9a-f]{6}$/i.test(String(v||''));}
   function ensureRev60State(){
@@ -4066,7 +3950,6 @@ dayCard=function(date){
   setTimeout(()=>{const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettings60;bindTimeline60();},200);
 })();
 
-/* Rev 061: robuste AppState-Persistenz + saubere Own-Event-Löschaktion nur bei bestehenden eigenen Terminen */
 (function(){
   const REV61_DEFAULTS={
     vacationHighlight:{enabled:false,color:'#f97316',opacity:0.18},
@@ -4252,11 +4135,10 @@ dayCard=function(date){
   setTimeout(()=>{const modal=document.querySelector('#modalBackdrop');if(modal)observer.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});const s=document.querySelector('#settingsBtn');if(s)s.onclick=openSettings61;ensureRev61State();applyAppearance();bindTimelineRev61();cleanupForeignTrashRev61();},150);
 })();
 
-/* Rev 062: Kontextgenaue Löschbuttons + Zeitstrahl ohne Zahnrad, Halbstundentakt fix, Start/Pause persistent */
 (function(){
   function rev62EnsureState(){
     if(!state) return;
-    state.timelineStep=30; // feste Vorgabe: Halbstundentakt
+    state.timelineStep=30;
     state.workStartTime=/^\d{2}:\d{2}$/.test(String(state.workStartTime||''))?state.workStartTime:'08:00';
     state.timelinePauseMinutes=Math.max(0,Number(state.timelinePauseMinutes||0));
     state.fetchMode='proxy';
@@ -4332,7 +4214,7 @@ dayCard=function(date){
     rev62EnsureState();
     const sidebar=document.querySelector('.sidebar'); if(!sidebar)return;
     let box=document.querySelector('#sidebarDayTimelineRev049');
-    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);} 
+    if(!box){box=document.createElement('section');box.id='sidebarDayTimelineRev049';box.className='sidebar-day-timeline';sidebar.appendChild(box);}
     const shown=rev62ShownDate();
     const events=rev62LayoutEvents(rev62VisibleEventsForDate(shown));
     const pxPerMin=0.55,totalH=1440*pxPerMin,step=30,lines=[];
@@ -4343,7 +4225,7 @@ dayCard=function(date){
     const evHtml=events.map(it=>{const top=Math.max(0,it.start*pxPerMin),h=Math.max(18,(it.end-it.start)*pxPerMin),w=100/it.cols,left=it.col*w;const tiny=h<28;return `<div class="timeline-event-block ${tiny?'timeline-event-tiny':''}" data-event-ref="${escapeHtml(it.ref)}" style="top:${top}px;height:${h}px;left:calc(${left}% + 42px);width:calc(${w}% - 46px);border-left-color:${escapeHtml(it.color)};background:${escapeHtml(it.color)}cc"><b>${escapeHtml(shortText(it.summary,28))}</b><small>${escapeHtml(rev62HHMM(it.start)+'–'+rev62HHMM(it.end)+' · '+shortText(it.source,22))}</small></div>`;}).join('');
     const start=rev62ParseHHMM(state.workStartTime),pause=Number(state.timelinePauseMinutes||0),endText=start===null?'—':rev62HHMM(start+8*60+pause);
     const vacClass=rev62IsVacationDay(shown)?' vacation-active':'';
-    box.innerHTML=`<div class="sidebar-timeline-head"><div><div class="sidebar-timeline-title">Zeitstrahl</div><div class="sidebar-timeline-date">${escapeHtml(typeof dateDERev046==='function'?dateDERev046(shown):deDate(shown))}</div></div><div class="timeline-day-nav"><button class="btn small ui-icon-btn" id="timelinePrevDay52" title="Vorheriger Tag">‹</button><button class="btn small" id="timelineToday52" title="Heute anzeigen">Heute</button><button class="btn small ui-icon-btn" id="timelineNextDay52" title="Nächster Tag">›</button></div></div><div class="timeline-field-stack-rev62"><label>Start Arbeitstag</label><input id="timelineWorkStartRev62" type="time" value="${escapeHtml(state.workStartTime||'08:00')}" title="Arbeitsbeginn"><label>Pausenzeit in Minuten</label><input id="timelinePauseRev62" type="number" min="0" step="5" value="${escapeHtml(state.timelinePauseMinutes||0)}" title="Pausenzeit in Minuten"></div><div class="timeline-pause-note">Schrittweite: Halbstundentakt fest eingestellt.</div><div class="timeline-eod">Feierabend Zeit: <b>${escapeHtml(endText)}</b> 🍺</div><div class="timeline-canvas-wrap${vacClass}" ${vacClass?`style="${rev62VacationStyle()}"`:''}><div class="timeline-canvas" style="height:${totalH}px;min-height:${totalH}px">${lines.join('')}${nowLine}${evHtml||'<div class="timeline-empty">Keine sichtbaren Termine für diesen Tag.</div>'}</div></div>`;
+    box.innerHTML=`<div class="sidebar-timeline-head"><div><div class="sidebar-timeline-title">Zeitstrahl</div><div class="sidebar-timeline-date">${escapeHtml(typeof dateDERev046==='function'?dateDERev046(shown):deDate(shown))}</div></div><div class="timeline-day-nav"><button class="btn small ui-icon-btn" id="timelinePrevDay52" title="Vorheriger Tag">‹</button><button class="btn small" id="timelineToday52" title="Heute anzeigen">Heute</button><button class="btn small ui-icon-btn" id="timelineNextDay52" title="Nächster Tag">›</button></div></div><div class="timeline-field-stack-rev62"><label>Start Arbeitstag</label><input id="timelineWorkStartRev62" type="time" value="${escapeHtml(state.workStartTime||'08:00')}" title="Arbeitsbeginn"><label>Pausenzeit in Minuten</label><input id="timelinePauseRev62" type="number" min="0" step="5" value="${escapeHtml(state.timelinePauseMinutes||0)}" title="Pausenzeit in Minuten"></div><div class="timeline-eod">Feierabend Zeit: <b>${escapeHtml(endText)}</b> 🍺</div><div class="timeline-canvas-wrap${vacClass}" ${vacClass?`style="${rev62VacationStyle()}"`:''}><div class="timeline-canvas" style="height:${totalH}px;min-height:${totalH}px">${lines.join('')}${nowLine}${evHtml||'<div class="timeline-empty">Keine sichtbaren Termine für diesen Tag.</div>'}</div></div>`;
     box.querySelector('#timelinePrevDay52').onclick=async()=>{state.timelineDayOffset=Number(state.timelineDayOffset||0)-1;await rev62SaveAppState();renderSidebarTimelineRev050();};
     box.querySelector('#timelineToday52').onclick=async()=>{state.timelineDayOffset=0;await rev62SaveAppState();renderSidebarTimelineRev050();};
     box.querySelector('#timelineNextDay52').onclick=async()=>{state.timelineDayOffset=Number(state.timelineDayOffset||0)+1;await rev62SaveAppState();renderSidebarTimelineRev050();};
@@ -4435,7 +4317,6 @@ dayCard=function(date){
   setTimeout(()=>{rev62EnsureState();renderSidebarTimelineRev050();const modal=document.querySelector('#modalBackdrop');if(modal)observer.observe(modal,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});},200);
 })();
 
-/* Rev 063: AppState-Protokoll vollständig für Anzeige-/Zeitstrahl-Einstellungen */
 (function(){
   const REV63_DEFAULTS={
     vacationHighlight:{enabled:false,color:'#f97316',opacity:0.18},
@@ -4477,7 +4358,7 @@ dayCard=function(date){
     ensureRev63State();
     const ui=oldUiStateOnly?oldUiStateOnly():{};
     return Object.assign({},ui,{
-      // Rev063: alle reinen Nutzer-/Anzeigeeinstellungen gehören explizit in app_state.
+
       vacationHighlight:JSON.parse(JSON.stringify(state.vacationHighlight)),
       todayHighlight:JSON.parse(JSON.stringify(state.todayHighlight)),
       outlineStyle:state.outlineStyle,
@@ -4517,7 +4398,6 @@ dayCard=function(date){
     return true;
   }
 
-  // Globales Speichern wieder auf das UI-Protokoll legen, damit spätere Auto-Saves die neuen Felder nicht mehr aus app_state herauslöschen.
   saveStateToCloud=async function(){
     if(!currentUser)return setCloudStatus('Nicht angemeldet. Online-Speicherung nicht möglich.','bad');
     const ok=await saveAppStateRev63();
@@ -4546,13 +4426,12 @@ dayCard=function(date){
   const oldReload63=window.reloadDatabaseDataRev044||reloadDatabaseDataRev044;
   reloadDatabaseDataRev044=async function(){
     if(!requireLogin())return;
-    // Schutz gegen Rücksetzen direkt nach Einstellungsänderung: aktuelle UI-Einstellungen zuerst in app_state schreiben, dann neu laden.
+
     await saveAppStateRev63();
     return oldReload63.apply(this,arguments);
   };
   window.reloadDatabaseDataRev044=reloadDatabaseDataRev044;
 
-  // Falls der Reload-Button vor diesem Patch bereits gebunden wurde, erneut binden.
   setTimeout(()=>{
     ensureRev63State();
     const btn=document.querySelector('#reloadDbBtn');
@@ -4562,7 +4441,6 @@ dayCard=function(date){
   },250);
 })();
 
-/* Rev 064: monolithischer Fix für erledigte Tasks, Monatsmodal-Papierkorb, Wochenenden/Urlaub, Projekt-Erledigt-Ansicht */
 (function(){
   const COMPLETED_TABLE_REV64='completed_tasks';
   const REV64_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
@@ -4809,7 +4687,6 @@ dayCard=function(date){
   setTimeout(()=>{ensureRev64State();applyAppearance();cleanupModalActions64();},300);
 })();
 
-/* Rev 065: finaler Monolith-Fix: Task ohne Titel, Wochenendeinstellung, Urlaub nur Mo-Fr, Hinweise sichtbar */
 (function(){
   const REV65_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
   const REV65_VAC_DEFAULT={enabled:false,color:'#f97316',opacity:0.18};
@@ -4854,7 +4731,6 @@ dayCard=function(date){
     document.documentElement.style.setProperty('--rev65WeekendOpacityPercent',Math.round(state.weekendHighlight.opacity*100)+'%');
   };
 
-  /* 1) Tagestask darf ohne Titel gespeichert werden. Wenn nur Notiz vorhanden ist, wird Titel = Aufgabe. Enter in der Notiz speichert. */
   window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
     if(!requireLogin())return;
     ensureSettings();
@@ -4911,7 +4787,6 @@ dayCard=function(date){
   const prevOpenMonth65=openMonthModal;
   window.openMonthModal=openMonthModal=function(){const r=prevOpenMonth65.apply(this,arguments);setTimeout(decorateMonth65,0);setTimeout(decorateMonth65,80);return r;};
 
-  /* Zeitstrahl: Urlaub an Samstag/Sonntag nicht markieren; Wochenende kann eigene Farbe bekommen. */
   if(typeof renderSidebarTimelineRev050==='function'){
     const prevSidebarTimeline65=renderSidebarTimelineRev050;
     window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){
@@ -5042,14 +4917,6 @@ dayCard=function(date){
   document.head.appendChild(style);
 })();
 
-/* Rev 066: stabile Nachbesserung Monolith
-   - Wochenendeinstellung vollständig in Settings
-   - Urlaub nur Mo-Fr, Hinweistext ergänzt
-   - Hinweise-Reiter mit Inhalt
-   - Task-Erstellung ohne Titel für Tages-, Langzeit- und Projekt-Tasks
-   - Enter speichert, Shift+Enter erzeugt Zeilenumbruch
-   - alte Löschbuttons werden beim Modalwechsel konsequent entfernt
-*/
 (function(){
   const REV66_WEEKEND_DEFAULT={enabled:false,color:'#e2e8f0',opacity:0.28};
   const REV66_VAC_DEFAULT={enabled:false,color:'#f97316',opacity:0.18};
@@ -5057,7 +4924,7 @@ dayCard=function(date){
   const esc66=v=>escapeHtml(String(v??''));
   const isHex66=v=>/^#[0-9a-f]{6}$/i.test(String(v||''));
   const clamp66=(v,min,max,fb)=>{v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;};
-  const isWeekend66=d=>{const x=new Date(d).getDay();return x===0||x===6;}; // 0 = Sonntag, 6 = Samstag
+  const isWeekend66=d=>{const x=new Date(d).getDay();return x===0||x===6;};
   const defaultTitle66='Aufgabe';
 
   function ensure66(){
@@ -5120,7 +4987,7 @@ dayCard=function(date){
         el.dataset.rev66EnterBound='1';
         el.addEventListener('keydown',ev=>{
           if(ev.key!=='Enter')return;
-          if(ev.shiftKey)return; // Shift+Enter bleibt Zeilenumbruch im Textfeld
+          if(ev.shiftKey)return;
           ev.preventDefault();
           document.querySelector('#saveModal')?.click();
         });
@@ -5176,7 +5043,6 @@ dayCard=function(date){
     bindEnterSave66('#modalContent');
   };
 
-  // Detail-Editor: leerer Titel wird ebenfalls auf „Aufgabe“ gesetzt, nicht auf alten Titel zurückgeworfen.
   if(typeof openProjectTaskDetailModalRev047==='function'){
     const prevProjectTaskDetail66=openProjectTaskDetailModalRev047;
     window.openProjectTaskDetailModalRev047=openProjectTaskDetailModalRev047=function(id){
@@ -5216,7 +5082,7 @@ dayCard=function(date){
   function dayHasVacation66(day){
     ensure66();
     if(!state.vacationHighlight.enabled)return false;
-    if(isWeekend66(day))return false; // zentrale Bedingung: Samstag/Sonntag sind nie Urlaubshighlight
+    if(isWeekend66(day))return false;
     return allVisibleEventsForDay66(day).some(e=>!!(e&&e.allDay&&String(e.summary||'').trim().toLowerCase()==='urlaub'));
   }
 
@@ -5252,7 +5118,6 @@ dayCard=function(date){
   const prevOpenMonth66=window.openMonthModal||openMonthModal;
   window.openMonthModal=openMonthModal=function(){cleanModalDeleteButtons66(false);const r=prevOpenMonth66.apply(this,arguments);setTimeout(()=>{cleanModalDeleteButtons66(false);decorateMonth66();},0);return r;};
 
-  // Kalendereinträge dürfen keine alten Task-Löschbuttons übernehmen.
   if(typeof openEventDetailModal==='function'){
     const prevEventDetail66=openEventDetailModal;
     window.openEventDetailModal=openEventDetailModal=function(ref){
@@ -5260,7 +5125,7 @@ dayCard=function(date){
       const r=prevEventDetail66.apply(this,arguments);
       const type=String(ref||'').split(':')[0];
       setTimeout(()=>{
-        // Bei normalem ICS-Termin immer löschen; bei eigenem Termin nur die vom Event-Editor sauber erzeugten Controls zulassen.
+
         cleanModalDeleteButtons66(type==='own');
         const title=document.querySelector('#modalTitle')?.textContent||'';
         if(!/Eigenen Termin bearbeiten/i.test(title) && !/Eigener Termin/i.test(title))cleanModalDeleteButtons66(false);
@@ -5408,7 +5273,6 @@ dayCard=function(date){
   document.head.appendChild(css);
 })();
 
-/* Rev 068: finaler Override - Wochenendeinstellungen sichtbar, Hinweise sichtbar, Task-Enter-Logik, sichere Modal-Löschbuttons */
 (function(){
   const REV68_WEEKEND={enabled:false,color:'#e2e8f0',opacity:0.28};
   const REV68_VAC={enabled:false,color:'#f97316',opacity:0.18};
@@ -5444,7 +5308,6 @@ dayCard=function(date){
   const prevApply68=applyAppearance;
   applyAppearance=function(){prevApply68();setVars68();};
 
-  // app_state enthält ab dieser Revision auch die Wochenend-Einstellungen.
   const oldUiStateOnly68=typeof uiStateOnly==='function'?uiStateOnly:null;
   if(oldUiStateOnly68){
     uiStateOnly=function(){
@@ -5696,16 +5559,6 @@ dayCard=function(date){
   setTimeout(bindSettings68,100);setTimeout(bindSettings68,600);setTimeout(()=>{ensure68();setVars68();decorateAll68();},300);
 })();
 
-
-/* Rev 070: modulare Online-Revision
-   - Urlaubstage: nur sichtbare ganztägige Termine mit exakt „Urlaub“, niemals Samstag/Sonntag
-   - Wochenenden separat farblich/mit Deckkraft einstellbar
-   - Hinweise-Reiter mit konkretem Inhalt
-   - harter Datenbank-Speicherbutton für App-State + relationale Tabellen
-   - Änderungen an bestehenden ICS-/eigenen Kalenderquellen werden sofort in calendar_sources gespeichert
-   - eigene Termine, Tages-/Langzeit-/Projekt-Tasks können ohne Titel gespeichert werden
-   - Enter speichert global im Modal, Shift+Enter erzeugt Zeilenumbruch in Textfeldern
-*/
 (function(){
   const REV70_DEFAULTS={
     vacationHighlight:{enabled:false,color:'#f97316',opacity:0.18},
@@ -5974,15 +5827,13 @@ dayCard=function(date){
   setTimeout(()=>{ensure70();decorateAll70();},350);
 })();
 
-
-/* Rev 071: Wochenend-/Urlaubslogik stabilisiert, Einstellungen repariert, Hinweise befüllt, ICS-Quellen speichern sofort */
 (function(){
   const REV71_DEFAULTS={
     weekendHighlight:{enabled:false,color:'#ffd29a',opacity:0.24},
     vacationHighlight:{enabled:true,color:'#f97316',opacity:0.18},
     todayHighlight:{borderWidth:4,borderColor:'#0284c7',opacity:0.16}
   };
-  function q(sel){return document.querySelector(sel);} 
+  function q(sel){return document.querySelector(sel);}
   function qq(sel){return Array.from(document.querySelectorAll(sel));}
   function esc(v){return typeof escapeHtml==='function'?escapeHtml(v):String(v??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
   function isHex(v){return /^#[0-9a-f]{6}$/i.test(String(v||''));}
@@ -6198,7 +6049,7 @@ dayCard=function(date){
 
 /* Rev 072: Zeitstrahl-Dekoration nach Navigation fixiert, Settings-Reiter robust neu gebunden */
 (function(){
-  function q(sel){return document.querySelector(sel);} 
+  function q(sel){return document.querySelector(sel);}
   function qq(sel){return Array.from(document.querySelectorAll(sel));}
   function isWeekend72(d){const x=new Date(d);const day=x.getDay();return day===0||day===6;}
   function cleanTimeline72(){
@@ -6328,7 +6179,7 @@ dayCard=function(date){
       rev73SetStatus('Sofort gespeichert: '+rev73Now(),'ok');
       return true;
     }catch(error){
-      console.error('Rev073 Sofortspeicherung fehlgeschlagen',error);
+      console.error('Sofortspeicherung fehlgeschlagen',error);
       rev73SetStatus('Sofort-Speichern fehlgeschlagen: '+(error.message||error),'bad');
       throw error;
     }finally{
@@ -6435,7 +6286,7 @@ dayCard=function(date){
 
 /* Rev 074: globale Sofort-Speicherung für Fachobjekte + Zeitstrahl farbneutral */
 (function(){
-  const r74LogPrefix='Rev074';
+  const r74LogPrefix='Speicherung';
   function r74Toast(msg){try{toast(msg);}catch(e){console.log(msg);}}
   function r74Status(msg,type='ok'){
     try{if(typeof setCloudStatus==='function')setCloudStatus(msg,type);}catch(e){}
