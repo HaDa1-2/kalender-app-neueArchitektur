@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev079-modular-safe",
-  "version": "0.79.0",
+  "name": "kalender-app-rev080-modular-cleanup",
+  "version": "0.80.0",
   "private": true,
-  "description": "Revision 079: risikoarme Utility-Modularisierung ohne Speicher- oder UI-Logikänderung",
+  "description": "Revision 080: modulare Konfiguration, Icons und ICS-Parser; Entfernung nachweislich ungenutzter Hilfsfunktionen",
   "scripts": {
     "start": "vercel dev"
   }

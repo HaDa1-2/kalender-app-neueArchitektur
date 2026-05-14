@@ -1,0 +1,8 @@
+// Rev080: reine ICS-Hilfsfunktionen ohne UI- oder Supabase-Abhängigkeit.
+(function(){
+function normalizeICSUrl(url){return (url||'').trim().replace(/^webcal:\/\//i,'https://');}
+function parseICS(text,source){const unfolded=text.replace(/\r?\n[ \t]/g,'');const blocks=unfolded.split(/BEGIN:VEVENT/i).slice(1);const events=[];for(const b of blocks){const uid=decodeICS(getRawICS(b,'UID'));const summary=decodeICS(getRawICS(b,'SUMMARY'))||'Ohne Titel';const location=decodeICS(getRawICS(b,'LOCATION'));const description=decodeICS(getRawICS(b,'DESCRIPTION'));const url=decodeICS(getRawICS(b,'URL'));const status=decodeICS(getRawICS(b,'STATUS'));const rrule=decodeICS(getRawICS(b,'RRULE'));const start=parseICalDate(getRawICS(b,'DTSTART'));const end=parseICalDate(getRawICS(b,'DTEND'));if(start)events.push({uid,summary,start:start.iso,end:end?.iso||null,allDay:start.allDay,source,location,description,url,status,rrule});}return events;}
+function getRawICS(block,key){const m=block.match(new RegExp('^'+key+'(?:;[^:]*)?:(.*)$','mi'));return m?m[1].trim():'';} function decodeICS(v){return (v||'').replace(/\\n/gi,' ').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\');}
+function parseICalDate(v){if(!v)return null;let m=v.match(/^(\d{4})(\d{2})(\d{2})$/);if(m){const[_,Y,M,D]=m;return {iso:new Date(+Y,+M-1,+D,0,0,0).toISOString(),allDay:true};}m=v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);if(!m)return null;const[_,Y,M,D,h,mi,s,z]=m;const d=z?new Date(Date.UTC(+Y,+M-1,+D,+h,+mi,+s)):new Date(+Y,+M-1,+D,+h,+mi,+s);return {iso:d.toISOString(),allDay:false};}
+  window.KalenderICS = { parseICS, parseICalDate, normalizeICSUrl, decodeICS, getRawICS };
+})();

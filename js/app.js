@@ -116,57 +116,25 @@
   };
 })();
 
-const SUPABASE_URL='https://peikohfbuxmpxhzmxrbj.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlaWtvaGZidXhtcHhoem14cmJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDA5ODYsImV4cCI6MjA5NDE3Njk4Nn0.KIsmCS19Jiy4DnYLoUyVbKDvJ6hOa_xFCB7CDLQ0vSA';
-const DEFAULT_PROXY_URL='https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url='; // Rev040 korrigiert: eigener Proxy im neuen Supabase-Projekt.
+const {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  DEFAULT_PROXY_URL,
+  STORE_KEY: storeKey,
+  DB_TABLES,
+  BLANK_INITIAL_STATE: blankInitialState,
+  DEFAULT_COLORS: defaultColors,
+  PALETTE: palette
+} = window.KalenderConfig;
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
-// Revision 038 relational persistence scaffold
-const DB_TABLES={
-  appState:'app_state',
-  calendarGroups:'calendar_groups',
-  calendarSources:'calendar_sources',
-  taskGroups:'task_groups',
-  tasks:'tasks',
-  longTaskGroups:'long_task_groups',
-  longTasks:'long_tasks',
-  ownEvents:'own_events'
-};
-
+const { iconEye, iconSettings, iconTrash } = window.KalenderIcons;
+const { parseICS, parseICalDate, normalizeICSUrl } = window.KalenderICS;
 let currentUser=null;
 let cloudReady=false;
 let cloudSaveTimer=null;
 let suppressCloudSave=false;
-const storeKey='kalender_rev_024_login_gate';
-const blankInitialState={
-  days:4,
-  dayRows:1,
-  startMode:'rolling',
-  panes:1,
-  offset:0,
-  syncInterval:15,
-  fetchMode:'proxy',
-  proxyUrl:'',
-  taskColumns:[{id:'default',name:'Allgemein',color:'#ffb020',visible:true}],
-  calendars:[{
-    name:'Mein Kalender',
-    links:[],
-    events:[],
-    ownEvents:[],
-    status:'Bitte anmelden, um Kalenderdaten zu laden.',
-    visible:true
-  }],
-  tasks:[],
-  longterm:[],
-  longColumns:[{id:'long_default',name:'Allgemein',color:'#48d38b',visible:true}],
-  viewModes:[],
-  activeViewMode:'',
-  theme:'light',
-  cornerStyle:'rounded'
-};
 function getBlankState(){return structuredClone(blankInitialState);}
 let state=getBlankState();
-const defaultColors={event:'#7c5cff',task:'#ffb020',overdue:'#ff5050',long:'#48d38b'};
-const palette=['#7c5cff','#39bdf8','#22c55e','#ffb020','#ff5050','#ec4899','#14b8a6','#f97316','#a855f7','#64748b','#111827','#ffffff'];
 function ensureSettings(){
   state.theme=state.theme||'light';
   state.dayRows=Number(state.dayRows||1);
@@ -352,18 +320,6 @@ function toast(msg){const t=$('#toast');t.textContent=msg;t.style.display='block
 function visibleCalendars(){return state.calendars.map((c,i)=>({cal:c,idx:i})).filter(x=>x.cal.visible!==false);}
 function applyAppearance(){ensureSettings();document.body.classList.toggle('light',state.theme==='light');document.body.classList.toggle('sharp-corners',state.cornerStyle==='sharp');document.documentElement.style.setProperty('--eventColor',state.colors.event);document.documentElement.style.setProperty('--taskColor',state.colors.task);document.documentElement.style.setProperty('--overdueColor',state.colors.overdue);document.documentElement.style.setProperty('--longColor',state.colors.long);}
 function render(){ensureSettings();applyAppearance();state.panes=state.calendars.filter(c=>c.visible!==false).length||1;document.documentElement.style.setProperty('--days',state.days);document.documentElement.style.setProperty('--daycols',Math.ceil(state.days/(state.dayRows||1)));document.documentElement.style.setProperty('--calpanes',state.panes);if($('#daysSelect'))$('#daysSelect').value=state.days;if($('#rowsSelect'))$('#rowsSelect').value=String(state.dayRows||1);if($('#startModeSelect'))$('#startModeSelect').value=state.startMode||'rolling';if($('#syncInterval'))$('#syncInterval').value=String(state.syncInterval??15);if($('#proxyUrl'))$('#proxyUrl').value=currentUser?(state.proxyUrl||DEFAULT_PROXY_URL):'';renderViewModeSelect();renderCalendarConfig();renderTaskColumnConfig();renderLongColumnConfig();renderTimeline();renderLong();persist();}
-function iconEye(isVisible){
-  return isVisible
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.8"/></svg>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.5-6 9.5-6c2.2 0 4 .8 5.4 1.8"/><path d="M21.5 12s-3.5 6-9.5 6c-2.2 0-4-.8-5.4-1.8"/><circle cx="12" cy="12" r="2.8"/><path d="M4 4l16 16"/></svg>`;
-}
-function iconSettings(){
-  return `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05a2 2 0 1 1-2.83 2.83l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.08A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.05.05a2 2 0 1 1-2.83-2.83l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.08A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.05-.05a2 2 0 1 1 2.83-2.83l.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.08A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.05-.05a2 2 0 1 1 2.83 2.83l-.05.05A1.7 1.7 0 0 0 19.4 9c.2.36.5.67.9.86.32.15.68.22 1.1.22H21a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-1.52.92Z"/></svg>`;
-}
-function iconTrash(){
-  return `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/></svg>`;
-}
-
 function moveCalendar(from,to){
   if(!requireLogin())return;
   if(to<0||to>=state.calendars.length||from===to)return;
@@ -482,7 +438,6 @@ function openTaskDetailModal(ref){
   $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();$('#saveModal').click();}};
 }
 function taskList(list,overdue=false){if(!list.length)return'<div class="empty">Keine Einträge.</div>';return list.map(t=>taskCardHtml(t,overdue,false)).join('');}
-function completedLongList(list){if(!list.length)return '';return `<div style="margin-top:10px">${list.map(t=>`<div class="card completed-long done"><div><b>${escapeHtml(shortText(t.title,30))}</b><small>Langfristiger Task erledigt am ${escapeHtml(t.completedDate)}</small></div></div>`).join('')}</div>`;}
 function renderLong(){const root=$('#longTermList');root.innerHTML=state.longterm.length?state.longterm.map(t=>{const meta=t.completedDate?`Erledigt am ${t.completedDate}`:`Erstellt am ${t.createdDate||'unbekannt'}`;const note=t.note?`<span class="long-note" title="${escapeHtml(t.note)}">${escapeHtml(shortText(t.note,80))}</span>`:'';return `<div class="long-card ${t.done?'completed-task-card':''}" data-task-ref="long:${t.id}"><div class="task-row"><input type="checkbox" ${t.done?'checked':''} data-toggle-long="${t.id}"><div><span class="long-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span><span class="long-meta">${escapeHtml(meta)}</span>${note}</div><button class="kebab" data-delete-long="${t.id}">×</button></div></div>`}).join(''):'<div class="empty">Keine langfristigen Aufgaben.</div>';$$('[data-toggle-long]').forEach(c=>{c.onclick=ev=>ev.stopPropagation();c.onchange=(ev)=>{ev.stopPropagation();const t=state.longterm.find(x=>x.id===c.dataset.toggleLong);if(!requireLogin()){c.checked=!c.checked;return;}if(t){t.done=c.checked;t.completedDate=c.checked?fmtDate(new Date()):null;render();}}});$$('[data-delete-long]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();if(!requireLogin())return;state.longterm=state.longterm.filter(x=>x.id!==b.dataset.deleteLong);render();});$$('#longTermList [data-task-ref]').forEach(card=>card.onclick=()=>openTaskDetailModal(card.dataset.taskRef));}
 function closeModal(){if(document.body.classList.contains('login-required')&&!currentUser)return;const md=document.querySelector('#deleteModeBtnAction');if(md)md.remove();$('#modalBackdrop').style.display='none';$('#saveModal').style.display='';$('#modalContent').onkeydown=null;} function openModal(title,html,onSave){$('#saveModal').style.display='';$('#modalTitle').textContent=title;$('#modalContent').innerHTML=html;$('#modalBackdrop').style.display='flex';setTimeout(()=>{const focusEl=$('#modalContent input:not([disabled]):not([readonly]), #modalContent textarea:not([disabled]):not([readonly]), #modalContent select:not([disabled])');if(focusEl){focusEl.focus();if(focusEl.select&&focusEl.tagName==='INPUT')focusEl.select();}},0);const doSave=()=>{onSave();closeModal();render();};$('#saveModal').onclick=doSave;$('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();doSave();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();doSave();}};} $('#cancelModal').onclick=closeModal;$('#modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};
 function openAddCalendarModal(){if(!requireLogin())return;openModal('Kalender hinzufügen',`<input id="mNewCalName" placeholder="Kalendername, z. B. Geschäftskalender"><div class="hint">Der Kalender wird direkt sichtbar angelegt. Danach kannst du mehrere ICS-Links hinzufügen oder ihn ausblenden.</div>`,()=>{const name=$('#mNewCalName').value.trim()||`Kalender ${state.calendars.length+1}`;state.calendars.push({name,links:[],events:[],ownEvents:[],status:'Noch kein ICS-Link hinterlegt.',visible:true});});}
@@ -524,10 +479,9 @@ function openCalendarNameModal(pane){if(!requireLogin())return;const cal=state.c
 function openTaskModal(date=fmtDate(new Date())){if(!requireLogin())return;ensureSettings();openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea>`,()=>{const title=$('#mTitle').value.trim();if(!title)return toast('Aufgabe ohne Titel wurde nicht gespeichert.');state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate').value,done:false,note:$('#mNote').value.trim(),columnId:$('#mTaskColumn').value});});}
 function openLongModal(){if(!requireLogin())return;openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><textarea id="mNote" rows="3" placeholder="Notiz"></textarea>`,()=>{const title=$('#mTitle').value.trim();if(!title)return toast('Aufgabe ohne Titel wurde nicht gespeichert.');state.longterm.push({id:crypto.randomUUID(),title,done:false,note:$('#mNote').value.trim(),createdDate:fmtDate(new Date()),completedDate:null});});}
 function openICSModal(pane){if(!requireLogin())return;openModal(`ICS-Link hinzufügen · ${state.calendars[pane].name}`,`<input id="mName" placeholder="Name, z. B. Privat Kalender"><input id="mUrl" placeholder="webcal://... oder https://.../calendar.ics"><div class="hint">webcal:// wird automatisch in https:// umgewandelt. Der Link wird gespeichert, aber in der Oberfläche nicht ausgeschrieben.</div>`,async()=>{const name=$('#mName').value.trim()||'ICS Kalender';const url=normalizeICSUrl($('#mUrl').value.trim());if(!url)return toast('Kein ICS-Link gespeichert.');state.calendars[pane].links.push({id:makeId('ics'),type:'ics',name,url,color:state.colors?.event||defaultColors.event,visible:true});await loadICS(pane);});}
-function openICSLinkModal(pane,idx){const link=state.calendars[pane]?.links?.[idx];if(!link)return;$('#modalTitle').textContent=`ICS-Link · ${link.name}`;$('#modalContent').innerHTML=`<div class="hint">Der Link bleibt in der normalen Übersicht verborgen. Hier kannst du ihn kontrollieren oder kopieren.</div><textarea rows="5" readonly onclick="this.select()">${escapeHtml(link.url)}</textarea>`;$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';}
 async function loadICS(pane){if(!requireLogin())return;const cal=state.calendars[pane];cal.events=[];cal.status='Lade ICS...';renderCalendarConfig();persist();let errors=[];for(const link of (cal.links||[])){if(link.type==='own'||!link.url)continue;try{const sourceUrl=normalizeICSUrl(link.url);const res=await fetch(buildICSFetchUrl(sourceUrl),{cache:'no-store'});if(!res.ok)throw new Error('HTTP '+res.status);const text=await res.text();if(!/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(text))throw new Error('Antwort ist keine ICS-Datei. Link/Freigabe/Proxy prüfen.');const parsed=parseICS(text,link.name).map(e=>Object.assign(e,{icsId:link.id,icsColor:link.color||state.colors.event,icsName:link.name}));cal.events.push(...parsed);if(!parsed.length)errors.push(`${link.name}: ICS geladen, aber keine Termine gefunden.`);}catch(e){errors.push(`${link.name}: ${e.message}`);}}cal.events=dedupeEvents(cal.events);const stamp=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});cal.status=errors.length?`${cal.events.length} Termine geladen. Fehler: ${errors.join(' | ')}. Zuletzt: ${stamp}`:`${cal.events.length} Termine geladen. Zuletzt: ${stamp}`;$('#diagBox').textContent=cal.status;persist();}
 function dedupeEvents(events){const map=new Map();(events||[]).forEach(e=>{const norm=v=>String(v||'').trim().toLowerCase();const key=[e.icsId||'',norm(e.summary),e.start||'',e.end||''].join('|');const old=map.get(key);if(!old||(!old.rrule&&e.rrule))map.set(key,e);});return Array.from(map.values());}
-function normalizeICSUrl(url){return (url||'').trim().replace(/^webcal:\/\//i,'https://');} function buildICSFetchUrl(url){let base=(state.proxyUrl||DEFAULT_PROXY_URL).trim();if(!base)return url;if(!/[?&]url=$/.test(base)){base=base.replace(/\/+$/,'')+'/?url=';}return base+encodeURIComponent(url);}
+function buildICSFetchUrl(url){let base=(state.proxyUrl||DEFAULT_PROXY_URL).trim();if(!base)return url;if(!/[?&]url=$/.test(base)){base=base.replace(/\/+$/,'')+'/?url=';}return base+encodeURIComponent(url);}
 async function syncAllICS(){if(!requireLogin())return;const total=state.calendars.reduce((s,c)=>s+(c.links?.length||0),0);if(!total){toast('Keine ICS-Links hinterlegt.');return;}toast('Synchronisierung gestartet...');for(let i=0;i<state.calendars.length;i++)await loadICS(i);render();toast('ICS-Synchronisierung abgeschlossen.');}
 
 
@@ -615,7 +569,6 @@ function openCloudModal(){
 }
 
 function openSyncSettingsModal(){openModal('Allgemeine Einstellungen',`<div class="settings-grid"><div class="field"><label>Erscheinung</label><select id="mTheme"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div><div class="field"><label>Kanten</label><select id="mCornerStyle"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="section-title">Synchronisierung</div><button class="btn primary" id="mSyncNow" type="button">Alle ICS-Links aktualisieren</button><div class="field"><label>Intervall</label><select id="mSyncInterval"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><div class="field"><label>Proxy-URL</label><input id="mProxyUrl" class="readonly-input" value="${escapeHtml(currentUser?(state.proxyUrl||DEFAULT_PROXY_URL):'')}" readonly disabled></div><div class="dev-note">Nur während der Entwicklung sichtbar, um eventuelle Fehlerquellen beim Laden externer ICS-Links einzugrenzen. Der Wert wird automatisch verwendet und ist hier nicht bearbeitbar.</div><div class="hint" id="mSyncHint">ICS-Links werden über den fest hinterlegten Proxy geladen.</div></div>`,()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;setupAutoSync();});$('#mTheme').value=state.theme||'light';$('#mCornerStyle').value=state.cornerStyle||'rounded';$('#mSyncInterval').value=String(state.syncInterval??15);$('#mSyncNow').onclick=async()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;persist();setupAutoSync();applyAppearance();await syncAllICS();};}
-function colorPaletteHtml(key){const current=(state.colors||defaultColors)[key];return `<div class="legend-palette-wrap" id="palette-${key}"><div class="color-palette" data-color-key="${key}">${palette.map(c=>`<button type="button" class="color-choice ${c.toLowerCase()===String(current).toLowerCase()?'active':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div></div>`;}
 function openLegendModal(){openModal('Legende',`<div class="legend-grid">
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Kalenderereignis</b><div class="hint">Die Farbe wird direkt am jeweiligen ICS- oder eigenen Kalender eingestellt.</div></div></div></div>
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Tagestask</b><div class="hint">Aufgaben mit konkretem Datum. Die Gruppierung erfolgt über Tagestask-Gruppen.</div></div></div></div>
@@ -623,9 +576,6 @@ function openLegendModal(){openModal('Legende',`<div class="legend-grid">
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Langfristiger Task</b><div class="hint">Aufgaben ohne feste Tagesbindung. Die Zuordnung erfolgt über langfristige Gruppen.</div></div></div></div>
 </div>`,()=>{persist();render();});}
 let syncTimer=null;function setupAutoSync(){if(syncTimer)clearInterval(syncTimer);syncTimer=null;const hint=$('#syncHint')||$('#mSyncHint');if(!currentUser){if(hint)hint.textContent='Nicht angemeldet. Automatische Synchronisierung ist deaktiviert.';return;}state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;const m=Number(state.syncInterval||0);if(hint)hint.textContent=m?`Automatische Synchronisierung aktiv: alle ${m} Minuten. ICS-Links werden über den fest hinterlegten Proxy geladen.`:'Automatische Synchronisierung aus. Manuell über den Button aktualisieren.';if(m>0){syncTimer=setInterval(syncAllICS,m*60*1000);}}
-function parseICS(text,source){const unfolded=text.replace(/\r?\n[ \t]/g,'');const blocks=unfolded.split(/BEGIN:VEVENT/i).slice(1);const events=[];for(const b of blocks){const uid=decodeICS(getRawICS(b,'UID'));const summary=decodeICS(getRawICS(b,'SUMMARY'))||'Ohne Titel';const location=decodeICS(getRawICS(b,'LOCATION'));const description=decodeICS(getRawICS(b,'DESCRIPTION'));const url=decodeICS(getRawICS(b,'URL'));const status=decodeICS(getRawICS(b,'STATUS'));const rrule=decodeICS(getRawICS(b,'RRULE'));const start=parseICalDate(getRawICS(b,'DTSTART'));const end=parseICalDate(getRawICS(b,'DTEND'));if(start)events.push({uid,summary,start:start.iso,end:end?.iso||null,allDay:start.allDay,source,location,description,url,status,rrule});}return events;}
-function getRawICS(block,key){const m=block.match(new RegExp('^'+key+'(?:;[^:]*)?:(.*)$','mi'));return m?m[1].trim():'';} function decodeICS(v){return (v||'').replace(/\\n/gi,' ').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\');}
-function parseICalDate(v){if(!v)return null;let m=v.match(/^(\d{4})(\d{2})(\d{2})$/);if(m){const[_,Y,M,D]=m;return {iso:new Date(+Y,+M-1,+D,0,0,0).toISOString(),allDay:true};}m=v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);if(!m)return null;const[_,Y,M,D,h,mi,s,z]=m;const d=z?new Date(Date.UTC(+Y,+M-1,+D,+h,+mi,+s)):new Date(+Y,+M-1,+D,+h,+mi,+s);return {iso:d.toISOString(),allDay:false};}
 let monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);function openMonthModal(){monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);$('#modalTitle').textContent='Monatsübersicht';$('#modalContent').innerHTML='<div id="monthView"></div>';$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';renderMonthView();}
 function renderMonthView(){const root=$('#monthView');if(!root)return;const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));const days=['Mo','Di','Mi','Do','Fr','Sa','So'];let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done);for(let i=0;i<42;i++){const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();const events=visibleCalendars().flatMap(({cal:c})=>{const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});return [...ics,...own];}).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status}));const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done);const showOverdueBar=sameDay(d,today)&&openOverdueToday;const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${events.slice(0,3).map(e=>`<div class="month-event" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${escapeHtml(shortText(e.summary,38))}</div>`).join('')}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;}html+='</div>';root.innerHTML=html;$('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};$('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};$$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});}
 
@@ -685,10 +635,6 @@ function snapshotCurrentVisibility(name){
   (state.taskColumns||[]).forEach(c=>task[c.id]=c.visible!==false);
   (state.longColumns||[]).forEach(c=>lng[c.id]=c.visible!==false);
   return {id:makeId('mode'),name,calendarVisible:cal,icsVisible:ics,taskVisible:task,longVisible:lng};
-}
-function saveActiveModeVisibility(){
-  const mode=(state.viewModes||[]).find(m=>m.id===state.activeViewMode); if(!mode)return;
-  const fresh=snapshotCurrentVisibility(mode.name); mode.calendarVisible=fresh.calendarVisible; mode.taskVisible=fresh.taskVisible; mode.longVisible=fresh.longVisible;
 }
 function applyViewMode(id){
   const mode=(state.viewModes||[]).find(m=>m.id===id); if(!mode)return;

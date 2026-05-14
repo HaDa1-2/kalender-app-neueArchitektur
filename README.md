@@ -127,3 +127,18 @@ Auszutauschende Dateien:
 
 Nicht umgesetzt:
 - Keine fachliche Aufteilung der Render-, Modal-, Supabase- oder ICS-Logik. Das wäre deutlich riskanter und sollte erst nach einem Funktionstest dieser Sicherheitsrevision erfolgen.
+
+
+## Revision 080
+
+Änderungen:
+- Konfiguration, Supabase-URL, Proxy-URL, Tabellen-Namen, Default-State, Farben und Palette aus `js/app.js` in `js/core/config.js` ausgelagert.
+- SVG-Icon-Funktionen aus `js/app.js` in `js/ui/icons.js` ausgelagert.
+- Reine ICS-Parser-Hilfsfunktionen aus `js/app.js` in `js/core/ics-parser.js` ausgelagert.
+- `index.html` lädt die Module jetzt in dieser Reihenfolge: Supabase SDK, Config, Utils, ICS-Parser, Icons, App.
+- Nachweislich ungenutzte Funktionen entfernt: `completedLongList`, `openICSLinkModal`, `colorPaletteHtml`, `saveActiveModeVisibility`.
+- Speicherlogik, Supabase-Schreiblogik, Löschlogik, ICS-Proxy und Datenbankstruktur unverändert gelassen.
+
+Nicht umgesetzt:
+- Keine Entfernung alter Rev-Patches und Override-Blöcke, wenn Abhängigkeiten nicht eindeutig beweisbar waren. Das wäre aktuell zu riskant, weil viele spätere Funktionen ältere Funktionen bewusst überschreiben.
+- Keine Aufteilung der kompletten UI-Rendering-Logik in einem Schritt. Das folgt besser in einer separaten Revision nach Funktionstest von Rev080.
