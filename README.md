@@ -154,3 +154,18 @@ Nicht umgesetzt:
 Nicht umgesetzt:
 - Statische Topbar-Icons in `index.html` wurden nicht vollständig auf JS-Icon-Funktionen umgestellt, weil diese vor dem Laden von `icons.js` nicht direkt verfügbar sind.
 - CSS-Altlasten wurden in dieser Revision nicht bereinigt.
+
+
+## Revision 082
+
+Änderungen:
+- SVG-Icons in normalen Buttons werden global begrenzt, damit sie keine übergroßen Kacheln mehr erzeugen.
+- „Alle einklappen“ wurde wieder kompakt skaliert.
+- Hinzufügen-Buttons für Tagestasks, Kalendergruppen, langfristige Gruppen und Projekt-Tasks wurden kompakter gemacht.
+- Plus-Buttons für Kalenderquellen und eigene Termine behalten wieder feste quadratische Maße.
+
+Nicht geändert:
+- Keine Speicherlogik.
+- Keine Supabase-Logik.
+- Keine ICS-Logik.
+- Keine Datenbankstruktur.

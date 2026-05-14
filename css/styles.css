@@ -1518,3 +1518,89 @@ body.sharp-corners .r75-color-bucket-wrap{border-radius:0!important;}
   display:block;
   stroke:currentColor;
 }
+
+/* Rev 082: Reparatur zentralisierter Icons in normalen Buttons */
+.btn svg{
+  width:18px!important;
+  height:18px!important;
+  min-width:18px!important;
+  display:block!important;
+  stroke:currentColor!important;
+  flex:0 0 auto!important;
+}
+.btn:has(svg){
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:6px!important;
+}
+.part-head .btn[data-task-date],
+.timeline-controls .btn,
+.add-calendar-box .btn{
+  min-height:34px!important;
+  height:auto!important;
+  padding:7px 10px!important;
+  line-height:1.15!important;
+  white-space:nowrap!important;
+}
+.add-calendar-box .btn svg,
+.part-head .btn[data-task-date] svg,
+#addProjectBtnRev047 svg{
+  width:16px!important;
+  height:16px!important;
+  min-width:16px!important;
+}
+.sidebar-collapse-all-row .btn{
+  min-height:34px!important;
+  height:34px!important;
+  padding:7px 10px!important;
+  line-height:1!important;
+  font-size:12px!important;
+}
+.sidebar-collapse-all-row .btn svg{
+  width:14px!important;
+  height:14px!important;
+  min-width:14px!important;
+}
+.config-toggle .config-chevron{
+  width:18px!important;
+  height:18px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  flex:0 0 18px!important;
+}
+.add-source-plus,
+.own-event-btn.plus-only{
+  width:34px!important;
+  height:34px!important;
+  min-width:34px!important;
+  padding:0!important;
+  line-height:1!important;
+}
+.add-source-plus svg,
+.own-event-btn.plus-only svg{
+  width:18px!important;
+  height:18px!important;
+  min-width:18px!important;
+}
+.cal-edit-icon{
+  width:16px!important;
+  height:16px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  margin-left:4px!important;
+}
+.color-bucket-btn,
+.r76-color-button,
+.rev56-color-btn,
+.rev57-color-button,
+.rev60-color-button,
+.rev61-color-button,
+.rev65-color-button,
+.rev66-color-button{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+}

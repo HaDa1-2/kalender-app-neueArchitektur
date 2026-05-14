@@ -1,6 +1,6 @@
 {
-  "name": "kalender-app-rev081-icon-unification",
-  "version": "0.81.0",
+  "name": "kalender-app-rev082-icon-layout-fix",
+  "version": "0.82.0",
   "private": true,
   "description": "Revision 081: zentrale UI-Icons erweitert und Darstellung im Hauptcode vereinheitlicht",
   "scripts": {
