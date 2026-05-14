@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev080-modular-cleanup",
-  "version": "0.80.0",
+  "name": "kalender-app-rev081-icon-unification",
+  "version": "0.81.0",
   "private": true,
-  "description": "Revision 080: modulare Konfiguration, Icons und ICS-Parser; Entfernung nachweislich ungenutzter Hilfsfunktionen",
+  "description": "Revision 081: zentrale UI-Icons erweitert und Darstellung im Hauptcode vereinheitlicht",
   "scripts": {
     "start": "vercel dev"
   }

@@ -1480,3 +1480,41 @@ body.sharp-corners .r75-color-bucket-wrap{border-radius:0!important;}
   .month-all-day-row{grid-template-columns:1fr!important;}
   .month-timed-event{grid-template-columns:50px minmax(0,1fr)!important;}
 }
+
+/* Rev 081: einheitliche SVG-Größen für zentralisierte Icons */
+.add-source-plus svg,
+.color-bucket-btn svg,
+.r76-color-button svg,
+.rev56-color-btn svg,
+.rev57-color-button svg,
+.rev60-color-button svg,
+.rev61-color-button svg,
+.rev65-color-button svg,
+.rev66-color-button svg{
+  width:20px;
+  height:20px;
+  display:block;
+  stroke:currentColor;
+}
+.add-source-plus{
+  gap:6px;
+}
+.cal-edit-icon svg{
+  width:15px;
+  height:15px;
+  display:block;
+  stroke:currentColor;
+}
+.config-chevron svg,
+.cal-collapse-icon svg{
+  width:16px;
+  height:16px;
+  display:block;
+  stroke:currentColor;
+}
+.order-btn svg{
+  width:16px;
+  height:16px;
+  display:block;
+  stroke:currentColor;
+}

@@ -142,3 +142,15 @@ Nicht umgesetzt:
 Nicht umgesetzt:
 - Keine Entfernung alter Rev-Patches und Override-Blöcke, wenn Abhängigkeiten nicht eindeutig beweisbar waren. Das wäre aktuell zu riskant, weil viele spätere Funktionen ältere Funktionen bewusst überschreiben.
 - Keine Aufteilung der kompletten UI-Rendering-Logik in einem Schritt. Das folgt besser in einer separaten Revision nach Funktionstest von Rev080.
+
+
+## Revision 081
+
+Änderungen:
+- `js/ui/icons.js` erweitert: Pfeil hoch/runter, Bearbeiten, Plus, Chevron, Farbeimer, Palette, Kalender und Refresh als zentrale Icon-Funktionen ergänzt.
+- `js/app.js` verwendet die zentralen Icon-Funktionen an weiteren Stellen statt direkter Textsymbole.
+- Bestehende Event-Handler und `data-*` Attribute wurden nicht umgebaut.
+
+Nicht umgesetzt:
+- Statische Topbar-Icons in `index.html` wurden nicht vollständig auf JS-Icon-Funktionen umgestellt, weil diese vor dem Laden von `icons.js` nicht direkt verfügbar sind.
+- CSS-Altlasten wurden in dieser Revision nicht bereinigt.
