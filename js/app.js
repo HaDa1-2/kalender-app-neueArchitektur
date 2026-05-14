@@ -6835,3 +6835,200 @@ dayCard=function(date){
   setTimeout(()=>{r75PatchRefresh();r75AfterUiUpdate();},0);
   setTimeout(()=>{r75PatchRefresh();r75AfterUiUpdate();},600);
 })();
+
+/* Rev 076: stabile Einstellungen, Farbeimer mit separater Vorschau, flackerarme Tagesfärbung */
+(function(){
+  const PATCH='r76';
+  const $=(s,r=document)=>r.querySelector(s);
+  const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+  const esc=(v)=>String(v??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  function isHex(v){return /^#[0-9a-f]{6}$/i.test(String(v||''));}
+  function clamp(v,min,max,fb){v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;}
+  function rgba(hex,opacity){
+    const h=isHex(hex)?hex:'#ffd29a';
+    const n=parseInt(h.slice(1),16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${clamp(opacity,0,1,0.2)})`;
+  }
+  function isWeekend(d){const x=new Date(d);const day=x.getDay();return day===0||day===6;}
+  function ensureR76(){
+    if(typeof state==='undefined')return;
+    state.weekendHighlight=Object.assign({enabled:false,color:'#ffd29a',opacity:0.24},state.weekendHighlight||{});
+    state.vacationHighlight=Object.assign({enabled:false,color:'#f97316',opacity:0.18},state.vacationHighlight||{});
+    state.todayHighlight=Object.assign({borderColor:'#0284c7',borderWidth:2,opacity:0.14},state.todayHighlight||{});
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.color=isHex(state.weekendHighlight.color)?state.weekendHighlight.color:'#ffd29a';
+    state.vacationHighlight.color=isHex(state.vacationHighlight.color)?state.vacationHighlight.color:'#f97316';
+    state.todayHighlight.borderColor=isHex(state.todayHighlight.borderColor)?state.todayHighlight.borderColor:'#0284c7';
+    state.weekendHighlight.opacity=clamp(state.weekendHighlight.opacity,0.05,0.70,0.24);
+    state.vacationHighlight.opacity=clamp(state.vacationHighlight.opacity,0.05,0.55,0.18);
+    state.todayHighlight.opacity=clamp(state.todayHighlight.opacity,0,0.65,0.14);
+    state.todayHighlight.borderWidth=clamp(state.todayHighlight.borderWidth,1,10,2);
+  }
+  function setVars(){
+    ensureR76();
+    if(typeof state==='undefined')return;
+    document.documentElement.style.setProperty('--r76WeekendBg',rgba(state.weekendHighlight.color,state.weekendHighlight.opacity));
+    document.documentElement.style.setProperty('--r76VacationBg',rgba(state.vacationHighlight.color,state.vacationHighlight.opacity));
+    document.documentElement.style.setProperty('--r76TodayBg',rgba(state.todayHighlight.borderColor,state.todayHighlight.opacity));
+    document.documentElement.style.setProperty('--r76TodayBorder',state.todayHighlight.borderColor);
+    document.documentElement.style.setProperty('--r76TodayBorderWidth',Math.round(state.todayHighlight.borderWidth)+'px');
+  }
+  function vacation(day){
+    ensureR76();
+    if(typeof state==='undefined'||!state.vacationHighlight.enabled||isWeekend(day))return false;
+    try{
+      if(typeof visibleCalendars!=='function'||typeof eventOccurrenceForDate!=='function')return false;
+      return visibleCalendars().some(({cal})=>{
+        const entries=[...(cal.events||[]),...(cal.ownEvents||[])];
+        return entries.some(e=>{
+          const link=(cal.links||[]).find(l=>l.id===e.icsId||l.id===e.sourceId);
+          if(link&&link.visible===false)return false;
+          const occ=eventOccurrenceForDate(e,day);
+          return !!(occ&&occ.allDay&&String(occ.summary||occ.title||'').trim().toLowerCase()==='urlaub');
+        });
+      });
+    }catch(_){return false;}
+  }
+  function clearDayClasses(el){
+    if(!el)return;
+    el.classList.remove('vacation-day-rev52','vacation-active','rev64-weekend-day','rev65-weekend-day','rev66-weekend-day','rev68-weekend-day','rev70-weekend-day','rev71-weekend-day','rev76-weekend-day','rev66-vacation-day','rev68-vacation-day','rev70-vacation-day','rev71-vacation-day','rev76-vacation-day','rev71-today-day','rev76-today-day');
+    el.classList.remove('rev64-weekend-cell','rev65-weekend-cell','rev66-weekend-cell','rev68-weekend-cell','rev70-weekend-cell','rev71-weekend-cell','rev76-weekend-cell','rev66-vacation-cell','rev68-vacation-cell','rev70-vacation-cell','rev71-vacation-cell','rev76-vacation-cell','rev71-today-cell','rev76-today-cell');
+  }
+  function applyDayClass(el,day,isMonth=false){
+    if(!el)return;
+    ensureR76();setVars();clearDayClasses(el);
+    const weekend=isWeekend(day);
+    if(weekend&&state.weekendHighlight.enabled)el.classList.add(isMonth?'rev76-weekend-cell':'rev76-weekend-day');
+    else if(!weekend&&vacation(day))el.classList.add(isMonth?'rev76-vacation-cell':'rev76-vacation-day');
+    const today=new Date();today.setHours(0,0,0,0);
+    if(typeof sameDay==='function'&&sameDay(day,today))el.classList.add(isMonth?'rev76-today-cell':'rev76-today-day');
+  }
+  function decorateVisibleDays(){
+    setVars();
+    $$('.day').forEach(day=>{
+      const txt=day.querySelector('.day-title-date')?.textContent||'';
+      const m=txt.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+      if(m)applyDayClass(day,new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`),false);
+    });
+    $$('[data-month-date]').forEach(cell=>applyDayClass(cell,new Date(cell.dataset.monthDate+'T00:00:00'),true));
+    neutralTimeline();
+  }
+  function neutralTimeline(){
+    ['#sidebarDayTimelineRev049','#sidebarDayTimelineRev049 .timeline-canvas-wrap','#sidebarDayTimelineRev049 .timeline-canvas','.sidebar-day-timeline','.timeline-canvas-wrap','.timeline-canvas'].forEach(sel=>{
+      $$(sel).forEach(el=>{
+        el.classList.remove('vacation-active','vacation-day-rev52','rev64-weekend-timeline','rev65-weekend-timeline','rev66-weekend-timeline','rev68-weekend-timeline','rev70-weekend-timeline','rev71-weekend-timeline','rev72-weekend-timeline','rev76-weekend-timeline','rev68-vacation-timeline','rev70-vacation-timeline','rev71-vacation-timeline','rev72-vacation-timeline','rev76-vacation-timeline');
+        el.classList.add('r76-timeline-neutral');
+        el.style.background='#fff';el.style.backgroundColor='#fff';el.style.backgroundImage='none';el.style.backgroundBlendMode='normal';
+      });
+    });
+  }
+  function colorControl(id,value){
+    return `<span class="r76-color-control"><button class="r76-color-button" type="button" data-color-button="${id}" title="Farbe auswählen">🎨</button><span class="r76-color-preview" data-color-preview="${id}" style="background:${esc(value)}"></span><input id="${id}" class="r76-color-input" type="color" value="${esc(value)}"></span>`;
+  }
+  function syncColorControls(scope=document){
+    $$('input[type="color"]',scope).forEach(input=>{
+      let preview=$(`[data-color-preview="${input.id}"]`,scope)||input.closest('.r76-color-control')?.querySelector('.r76-color-preview');
+      let button=$(`[data-color-button="${input.id}"]`,scope)||input.closest('.r76-color-control')?.querySelector('.r76-color-button');
+      if(!input.closest('.r76-color-control')&&!input.dataset.r76Converted){
+        input.dataset.r76Converted='1';
+        const wrap=document.createElement('span');wrap.className='r76-color-control';
+        const btn=document.createElement('button');btn.type='button';btn.className='r76-color-button';btn.textContent='🎨';btn.title='Farbe auswählen';btn.dataset.colorButton=input.id;
+        const sw=document.createElement('span');sw.className='r76-color-preview';sw.dataset.colorPreview=input.id;sw.style.background=input.value;
+        input.parentNode.insertBefore(wrap,input);wrap.appendChild(btn);wrap.appendChild(sw);wrap.appendChild(input);preview=sw;button=btn;
+      }
+      input.classList.add('r76-color-input');
+      const update=()=>{if(preview)preview.style.background=input.value;};
+      if(button&&!button.dataset.r76Bound){button.dataset.r76Bound='1';button.onclick=(ev)=>{ev.preventDefault();input.click();};}
+      if(!input.dataset.r76Bound){input.dataset.r76Bound='1';input.addEventListener('input',update);input.addEventListener('change',update);}
+      update();
+    });
+  }
+  function readDraft(d){
+    const gv=id=>$('#'+id)?.value;
+    const ck=id=>!!$('#'+id)?.checked;
+    if(gv('mTheme76'))d.theme=gv('mTheme76');
+    if(gv('mCornerStyle76'))d.cornerStyle=gv('mCornerStyle76');
+    if(gv('mOutlineStyle76'))d.outlineStyle=gv('mOutlineStyle76');
+    if(gv('mOutlineColor76'))d.outlineCustomColor=gv('mOutlineColor76');
+    if($('#mWeekendEnabled76'))d.weekendHighlight.enabled=ck('mWeekendEnabled76');
+    if(gv('mWeekendColor76'))d.weekendHighlight.color=gv('mWeekendColor76');
+    if(gv('mWeekendOpacity76'))d.weekendHighlight.opacity=clamp(gv('mWeekendOpacity76'),0.05,0.70,0.24);
+    if($('#mVacationEnabled76'))d.vacationHighlight.enabled=ck('mVacationEnabled76');
+    if(gv('mVacationColor76'))d.vacationHighlight.color=gv('mVacationColor76');
+    if(gv('mVacationOpacity76'))d.vacationHighlight.opacity=clamp(gv('mVacationOpacity76'),0.05,0.55,0.18);
+    if(gv('mTodayWidth76'))d.todayHighlight.borderWidth=clamp(gv('mTodayWidth76'),1,10,2);
+    if(gv('mTodayColor76'))d.todayHighlight.borderColor=gv('mTodayColor76');
+    if(gv('mTodayOpacity76'))d.todayHighlight.opacity=clamp(gv('mTodayOpacity76'),0,0.65,0.14);
+    if(gv('mSyncInterval76')!==undefined)d.syncInterval=Number(gv('mSyncInterval76'));
+  }
+  function applyDraft(d){
+    state.theme=d.theme;state.cornerStyle=d.cornerStyle;state.outlineStyle=d.outlineStyle;state.outlineCustomColor=d.outlineCustomColor;
+    state.weekendHighlight=Object.assign({enabled:false,color:'#ffd29a',opacity:0.24},d.weekendHighlight||{});
+    state.vacationHighlight=Object.assign({enabled:false,color:'#f97316',opacity:0.18},d.vacationHighlight||{});
+    state.todayHighlight=Object.assign({borderColor:'#0284c7',borderWidth:2,opacity:0.14},d.todayHighlight||{});
+    state.syncInterval=Number(d.syncInterval??state.syncInterval??15);
+    ensureR76();setVars();
+    if(typeof applyAppearance==='function')applyAppearance();
+    if(typeof setupAutoSync==='function')setupAutoSync();
+  }
+  function openSettings76(){
+    if(typeof state==='undefined')return;
+    ensureR76();
+    let active='general';
+    const d=JSON.parse(JSON.stringify({theme:state.theme||'light',cornerStyle:state.cornerStyle||'rounded',outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',weekendHighlight:state.weekendHighlight,vacationHighlight:state.vacationHighlight,todayHighlight:state.todayHighlight,syncInterval:state.syncInterval??15}));
+    $('#modalTitle').textContent='Allgemeine Einstellungen';
+    $('#modalContent').innerHTML=`<div class="r76-settings"><div class="r76-tabs"><button class="r76-tab active" data-r76-tab="general">Allgemein</button><button class="r76-tab" data-r76-tab="sync">Synchronisierung</button><button class="r76-tab" data-r76-tab="info">Hinweise</button></div><div id="settingsTabContentR76"></div></div>`;
+    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';
+    const root=()=>$('#settingsTabContentR76');
+    function general(){
+      root().innerHTML=`<div class="r76-grid">
+        <section class="r76-card"><h3>Darstellung</h3><div class="r76-row"><label>Erscheinung</label><select id="mTheme76"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div><div class="r76-row"><label>Kanten</label><select id="mCornerStyle76"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="r76-row"><label>Konturfarbe</label><div class="r76-inline"><select id="mOutlineStyle76"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Eigene Farbe</option></select>${colorControl('mOutlineColor76',d.outlineCustomColor)}</div></div></section>
+        <section class="r76-card"><label class="r76-check"><span><b>Wochenendtage anders anzeigen</b><small>Samstag und Sonntag erhalten eine eigene Hintergrundfarbe. Diese Markierung ist unabhängig von Urlaub.</small></span><input id="mWeekendEnabled76" type="checkbox"></label><div class="r76-row"><label>Wochenendfarbe</label>${colorControl('mWeekendColor76',d.weekendHighlight.color)}</div><div class="r76-row"><label>Wochenend-Deckkraft</label><input id="mWeekendOpacity76" type="range" min="0.05" max="0.70" step="0.01" value="${esc(d.weekendHighlight.opacity)}"></div></section>
+        <section class="r76-card"><label class="r76-check"><span><b>Urlaubstage anders anzeigen</b><small>Ein ganztägiger Termin mit exakt dem Titel „Urlaub“ markiert den Tag nur dann, wenn der Tag kein Samstag und kein Sonntag ist.</small></span><input id="mVacationEnabled76" type="checkbox"></label><div class="r76-row"><label>Urlaubsfarbe</label>${colorControl('mVacationColor76',d.vacationHighlight.color)}</div><div class="r76-row"><label>Urlaubs-Deckkraft</label><input id="mVacationOpacity76" type="range" min="0.05" max="0.55" step="0.01" value="${esc(d.vacationHighlight.opacity)}"></div></section>
+        <section class="r76-card"><h3>Aktueller Tag</h3><div class="r76-row"><label>Linienstärke</label><input id="mTodayWidth76" type="range" min="1" max="10" step="1" value="${esc(d.todayHighlight.borderWidth)}"></div><div class="r76-row"><label>Linienfarbe</label>${colorControl('mTodayColor76',d.todayHighlight.borderColor)}</div><div class="r76-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity76" type="range" min="0" max="0.65" step="0.01" value="${esc(d.todayHighlight.opacity)}"></div></section>
+      </div>`;
+      $('#mTheme76').value=d.theme;$('#mCornerStyle76').value=d.cornerStyle;$('#mOutlineStyle76').value=d.outlineStyle;$('#mWeekendEnabled76').checked=!!d.weekendHighlight.enabled;$('#mVacationEnabled76').checked=!!d.vacationHighlight.enabled;syncColorControls(root());
+    }
+    function sync(){
+      root().innerHTML=`<div class="r76-grid"><section class="r76-card"><h3>Synchronisierung</h3><div class="r76-row"><label>Intervall</label><select id="mSyncInterval76"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><button class="btn primary" id="r76HardSaveBtn" type="button">Alle Änderungen hart in Datenbank speichern</button><p>Speichert UI-Einstellungen und relationale Tabellen sofort.</p></section></div>`;
+      $('#mSyncInterval76').value=String(d.syncInterval??15);$('#r76HardSaveBtn').onclick=async()=>{readDraft(d);applyDraft(d);if(typeof hardSaveRev70==='function')await hardSaveRev70(true);else if(typeof saveStateToCloud==='function')await saveStateToCloud();if(typeof toast==='function')toast('Hart gespeichert.');};
+    }
+    function info(){
+      root().innerHTML=`<div class="r76-grid"><section class="r76-card"><h3>Urlaub und Wochenende</h3><p>Wochenende bedeutet immer Samstag und Sonntag. Urlaubstage werden nur an Montag bis Freitag farblich markiert.</p></section><section class="r76-card"><h3>Zeitstrahl</h3><p>Der seitliche Zeitstrahl bleibt bewusst neutral und übernimmt keine Urlaubs-, Wochenend- oder Heute-Hintergrundfarbe.</p></section><section class="r76-card"><h3>Speicherlogik</h3><p>UI-Einstellungen werden im App-State gespeichert. Fachliche Daten wie Kalendergruppen, Quellen, Tasks, Projekte und eigene Termine liegen in eigenen Supabase-Tabellen.</p></section></div>`;
+    }
+    function renderTab(){if(active==='general')general();else if(active==='sync')sync();else info();}
+    renderTab();
+    $$('[data-r76-tab]').forEach(btn=>btn.onclick=()=>{readDraft(d);active=btn.dataset.r76Tab;$$('[data-r76-tab]').forEach(b=>b.classList.toggle('active',b===btn));renderTab();});
+    $('#saveModal').onclick=async()=>{readDraft(d);applyDraft(d);let ok=true;try{if(typeof hardSaveRev70==='function')ok=await hardSaveRev70(false);else if(typeof saveStateToCloud==='function')await saveStateToCloud();}catch(_){ok=false;}if(typeof closeModal==='function')closeModal();if(typeof render==='function')render();if(typeof toast==='function')toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');};
+  }
+  window.openSyncSettingsModal=openSettings76;
+  function bindSettings(){const b=$('#settingsBtn');if(b)b.onclick=openSettings76;}
+  if(typeof uiStateOnly==='function'){
+    const oldUi=uiStateOnly;
+    window.uiStateOnly=uiStateOnly=function(){ensureR76();const ui=oldUi.apply(this,arguments)||{};ui.weekendHighlight=JSON.parse(JSON.stringify(state.weekendHighlight));ui.vacationHighlight=JSON.parse(JSON.stringify(state.vacationHighlight));ui.todayHighlight=JSON.parse(JSON.stringify(state.todayHighlight));ui.outlineStyle=state.outlineStyle;ui.outlineCustomColor=state.outlineCustomColor;return ui;};
+  }
+  if(typeof applyUiState==='function'){
+    const oldApply=applyUiState;
+    window.applyUiState=applyUiState=function(ui){const r=oldApply.apply(this,arguments);if(ui){if(ui.weekendHighlight)state.weekendHighlight=ui.weekendHighlight;if(ui.vacationHighlight)state.vacationHighlight=ui.vacationHighlight;if(ui.todayHighlight)state.todayHighlight=ui.todayHighlight;if(ui.outlineStyle!==undefined)state.outlineStyle=ui.outlineStyle;if(ui.outlineCustomColor!==undefined)state.outlineCustomColor=ui.outlineCustomColor;}ensureR76();setVars();return r;};
+  }
+  if(typeof render==='function'){
+    const oldRender=render;
+    window.render=render=function(){const r=oldRender.apply(this,arguments);decorateVisibleDays();setTimeout(decorateVisibleDays,0);setTimeout(decorateVisibleDays,40);setTimeout(decorateVisibleDays,120);setTimeout(bindSettings,0);return r;};
+  }
+  if(typeof renderSidebarTimelineRev050==='function'){
+    const oldTl=renderSidebarTimelineRev050;
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){const r=oldTl.apply(this,arguments);neutralTimeline();setTimeout(neutralTimeline,0);setTimeout(neutralTimeline,80);return r;};
+  }
+  document.addEventListener('input',ev=>{if(ev.target&&ev.target.matches('input[type="color"]'))syncColorControls(document);},true);
+  const obs=new MutationObserver(()=>{bindSettings();syncColorControls(document);decorateVisibleDays();});
+  obs.observe(document.documentElement,{childList:true,subtree:true});
+  const style=document.createElement('style');
+  style.textContent=`
+    .rev76-weekend-day{background:linear-gradient(0deg,var(--r76WeekendBg),var(--r76WeekendBg)),#f8fbff!important}.rev76-vacation-day{background:linear-gradient(0deg,var(--r76VacationBg),var(--r76VacationBg)),#f8fbff!important}.month-cell.rev76-weekend-cell{background:linear-gradient(0deg,var(--r76WeekendBg),var(--r76WeekendBg)),#f8fbff!important}.month-cell.rev76-vacation-cell{background:linear-gradient(0deg,var(--r76VacationBg),var(--r76VacationBg)),#f8fbff!important}.rev76-today-day{border-color:var(--r76TodayBorder)!important;border-width:var(--r76TodayBorderWidth)!important;box-shadow:0 0 0 1px var(--r76TodayBg)!important}.month-cell.rev76-today-cell{border-color:var(--r76TodayBorder)!important;border-width:var(--r76TodayBorderWidth)!important}
+    .r76-timeline-neutral,#sidebarDayTimelineRev049,#sidebarDayTimelineRev049 .timeline-canvas-wrap,#sidebarDayTimelineRev049 .timeline-canvas,.sidebar-day-timeline .timeline-canvas-wrap,.sidebar-day-timeline .timeline-canvas{background:#fff!important;background-color:#fff!important;background-image:none!important;background-blend-mode:normal!important}
+    .r76-settings{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;align-items:start;color:#111827!important}.r76-tabs{display:flex;flex-direction:column;gap:8px}.r76-tab{width:100%;text-align:left;background:#f3f4f6!important;border:1px solid #cbd6e7!important;color:#111827!important;border-radius:0;padding:10px 12px;font-weight:900}.r76-tab.active{background:#d1d5db!important;border-color:#9ca3af!important}.r76-grid{display:grid;gap:12px}.r76-card{border:1px solid #cbd5e1;border-radius:0;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827!important}.r76-card h3{margin:0;font-size:15px}.r76-card p,.r76-card small{color:#475569!important;line-height:1.35}.r76-row{display:grid;grid-template-columns:minmax(155px,230px) minmax(0,1fr);gap:10px;align-items:center}.r76-row label{font-weight:800;color:#111827;font-size:13px}.r76-inline{display:flex;gap:8px;align-items:center}.r76-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}.r76-check input[type="checkbox"]{width:20px;height:20px;accent-color:#0284c7}.r76-color-control{display:inline-flex!important;align-items:center!important;gap:8px!important}.r76-color-button{width:34px!important;height:34px!important;border:1px solid #cbd5e1!important;background:#f8fafc!important;color:#111827!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;font-size:18px!important;padding:0!important;box-shadow:0 2px 8px rgba(15,23,42,.08)!important}.r76-color-preview{width:24px!important;height:24px!important;border:1px solid #94a3b8!important;display:inline-block!important}.r76-color-input{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}.r75-color-bucket-wrap{background:#f8fafc!important}.r75-color-bucket-input{opacity:0!important}.r75-color-bucket-wrap+.r76-color-preview{margin-left:8px!important}@media(max-width:760px){.r76-settings{grid-template-columns:1fr}.r76-tabs{flex-direction:row;flex-wrap:wrap}.r76-tab{width:auto}.r76-row{grid-template-columns:1fr;gap:5px}}
+  `;
+  document.head.appendChild(style);
+  setVars();bindSettings();setTimeout(()=>{bindSettings();syncColorControls(document);decorateVisibleDays();},0);setTimeout(()=>{bindSettings();decorateVisibleDays();},600);
+})();

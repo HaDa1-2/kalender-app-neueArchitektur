@@ -82,3 +82,16 @@ Auszutauschende Dateien:
 
 Nicht umgesetzt:
 - Keine strukturelle Verschlankung und keine Entfernung alter Funktionsblöcke, weil das bei der verworfenen vorherigen Revision zu Fehlern geführt hat.
+
+
+## Revision 076
+
+Änderungen:
+- Einstellungen stabilisiert: Wochenendtage bleiben dauerhaft sichtbar und werden im App-State gespeichert.
+- Farbauswahl in den Einstellungen auf neutralen Farbeimer-Button mit separater Farbvorschau umgestellt.
+- Linienfarbe des aktuellen Tags nutzt denselben Farbauswahl-Stil.
+- Tages- und Monatsfärbung wird nach Navigation synchron nachgezogen, um sichtbares Flackern zu reduzieren.
+- Seitlicher Zeitstrahl bleibt neutral und übernimmt keine Urlaubs-/Wochenendfarben.
+
+Nicht umgesetzt:
+- Keine vollständige Neugestaltung der Monatsübersicht; dafür sollte separat ein eigenes Layout-Konzept beschlossen werden.
