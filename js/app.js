@@ -5973,3 +5973,225 @@ dayCard=function(date){
   document.head.appendChild(style);
   setTimeout(()=>{ensure70();decorateAll70();},350);
 })();
+
+
+/* Rev 071: Wochenend-/Urlaubslogik stabilisiert, Einstellungen repariert, Hinweise befüllt, ICS-Quellen speichern sofort */
+(function(){
+  const REV71_DEFAULTS={
+    weekendHighlight:{enabled:false,color:'#ffd29a',opacity:0.24},
+    vacationHighlight:{enabled:true,color:'#f97316',opacity:0.18},
+    todayHighlight:{borderWidth:4,borderColor:'#0284c7',opacity:0.16}
+  };
+  function q(sel){return document.querySelector(sel);} 
+  function qq(sel){return Array.from(document.querySelectorAll(sel));}
+  function esc(v){return typeof escapeHtml==='function'?escapeHtml(v):String(v??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+  function isHex(v){return /^#[0-9a-f]{6}$/i.test(String(v||''));}
+  function clamp(v,min,max,fb){v=Number(v);return Number.isFinite(v)?Math.max(min,Math.min(max,v)):fb;}
+  function isWeekendRev71(d){const x=new Date(d);const day=x.getDay();return day===0||day===6;}
+  function toRgba(hex,opacity){
+    const h=isHex(hex)?hex:'#ffd29a';
+    const n=parseInt(h.slice(1),16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${clamp(opacity,0,1,0.2)})`;
+  }
+  function ensureRev71(){
+    if(typeof ensureSettings==='function')ensureSettings();
+    state.weekendHighlight=Object.assign({},REV71_DEFAULTS.weekendHighlight,state.weekendHighlight||{});
+    state.vacationHighlight=Object.assign({},REV71_DEFAULTS.vacationHighlight,state.vacationHighlight||{});
+    state.todayHighlight=Object.assign({},REV71_DEFAULTS.todayHighlight,state.todayHighlight||{});
+    state.weekendHighlight.enabled=!!state.weekendHighlight.enabled;
+    state.vacationHighlight.enabled=!!state.vacationHighlight.enabled;
+    state.weekendHighlight.color=isHex(state.weekendHighlight.color)?state.weekendHighlight.color:REV71_DEFAULTS.weekendHighlight.color;
+    state.vacationHighlight.color=isHex(state.vacationHighlight.color)?state.vacationHighlight.color:REV71_DEFAULTS.vacationHighlight.color;
+    state.todayHighlight.borderColor=isHex(state.todayHighlight.borderColor)?state.todayHighlight.borderColor:REV71_DEFAULTS.todayHighlight.borderColor;
+    state.weekendHighlight.opacity=clamp(state.weekendHighlight.opacity,0.05,0.70,REV71_DEFAULTS.weekendHighlight.opacity);
+    state.vacationHighlight.opacity=clamp(state.vacationHighlight.opacity,0.05,0.55,REV71_DEFAULTS.vacationHighlight.opacity);
+    state.todayHighlight.opacity=clamp(state.todayHighlight.opacity,0,0.65,REV71_DEFAULTS.todayHighlight.opacity);
+    state.todayHighlight.borderWidth=clamp(state.todayHighlight.borderWidth,1,10,REV71_DEFAULTS.todayHighlight.borderWidth);
+  }
+  function setVarsRev71(){
+    ensureRev71();
+    document.documentElement.style.setProperty('--rev71WeekendBg',toRgba(state.weekendHighlight.color,state.weekendHighlight.opacity));
+    document.documentElement.style.setProperty('--rev71VacationBg',toRgba(state.vacationHighlight.color,state.vacationHighlight.opacity));
+    document.documentElement.style.setProperty('--rev71TodayBg',toRgba(state.todayHighlight.borderColor,state.todayHighlight.opacity));
+    document.documentElement.style.setProperty('--rev71TodayBorderColor',state.todayHighlight.borderColor);
+    document.documentElement.style.setProperty('--rev71TodayBorderWidth',String(Math.round(state.todayHighlight.borderWidth))+'px');
+  }
+  function eventVisibleForVacation(e,cal){
+    const links=cal?.links||[];
+    const link=links.find(l=>l.id===e.icsId||l.id===e.sourceId);
+    return !(link&&link.visible===false);
+  }
+  function hasVacationRev71(day){
+    ensureRev71();
+    if(!state.vacationHighlight.enabled||isWeekendRev71(day))return false;
+    try{
+      return visibleCalendars().some(({cal})=>{
+        const entries=[...(cal.events||[]),...(cal.ownEvents||[])];
+        return entries.some(e=>{
+          if(!eventVisibleForVacation(e,cal))return false;
+          const occ=eventOccurrenceForDate(e,day);
+          return !!(occ&&occ.allDay&&String(occ.summary||occ.title||'').trim().toLowerCase()==='urlaub');
+        });
+      });
+    }catch(_){return false;}
+  }
+  function clearDecorRev71(el){
+    if(!el)return;
+    el.classList.remove('vacation-day-rev52','vacation-active','rev64-weekend-day','rev65-weekend-day','rev66-weekend-day','rev68-weekend-day','rev70-weekend-day','rev71-weekend-day','rev66-vacation-day','rev68-vacation-day','rev70-vacation-day','rev71-vacation-day');
+    el.classList.remove('rev64-weekend-cell','rev65-weekend-cell','rev66-weekend-cell','rev68-weekend-cell','rev70-weekend-cell','rev71-weekend-cell','rev66-vacation-cell','rev68-vacation-cell','rev70-vacation-cell','rev71-vacation-cell');
+    el.classList.remove('rev65-weekend-timeline','rev68-weekend-timeline','rev70-weekend-timeline','rev71-weekend-timeline','rev68-vacation-timeline','rev70-vacation-timeline','rev71-vacation-timeline');
+  }
+  function applyDecorRev71(el,day,isMonth){
+    if(!el)return;
+    ensureRev71();setVarsRev71();clearDecorRev71(el);
+    const weekend=isWeekendRev71(day);
+    if(weekend&&state.weekendHighlight.enabled)el.classList.add(isMonth?'rev71-weekend-cell':'rev71-weekend-day');
+    else if(!weekend&&hasVacationRev71(day))el.classList.add(isMonth?'rev71-vacation-cell':'rev71-vacation-day');
+    if(!isMonth&&typeof sameDay==='function'){
+      const today=new Date();today.setHours(0,0,0,0);
+      if(sameDay(day,today))el.classList.add('rev71-today-day');
+    }
+  }
+  function allMonthEventsRev71(d){
+    try{
+      return visibleCalendars().flatMap(({cal:c})=>{
+        const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});
+        const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});
+        return [...ics,...own];
+      }).map(e=>({summary:e.summary,color:e.icsColor||state.colors?.event||'#7c5cff',status:e.status,allDay:!!e.allDay,start:e.start||''}))
+        .sort((a,b)=>Number(!b.allDay)-Number(!a.allDay)||new Date(a.start)-new Date(b.start));
+    }catch(_){return [];}
+  }
+  function renderMonthViewRev71(){
+    const root=q('#monthView');if(!root)return;
+    ensureRev71();setVarsRev71();
+    const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+    const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
+    const heads=['Mo','Di','Mi','Do','Fr','Sa','So'];
+    let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${esc(monthName)}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${heads.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
+    const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);
+    const openOverdueToday=(state.tasks||[]).some(t=>t.date<todayIso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate&&t.dueDate<todayIso&&!t.done));
+    for(let i=0;i<42;i++){
+      const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
+      const weekend=isWeekendRev71(d);const vacation=!weekend&&hasVacationRev71(d);
+      const cls=['month-cell'];if(!inMonth)cls.push('out');if(sameDay(d,today))cls.push('today','rev71-today-cell');if(weekend&&state.weekendHighlight.enabled)cls.push('rev71-weekend-cell');else if(vacation)cls.push('rev71-vacation-cell');
+      const events=allMonthEventsRev71(d);
+      const hasOpenDayTasks=(state.tasks||[]).some(t=>t.date===iso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate===iso&&!t.done));
+      const showOverdueBar=sameDay(d,today)&&openOverdueToday;
+      const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';
+      const compactAll=events.length>2;
+      const evHtml=events.slice(0,4).map((e,idx)=>{const compact=compactAll||String(e.summary||'').length>24||idx>1;return `<div class="month-event ${compact?'month-event-compact':''} ${e.allDay?'month-event-all-day':''}" style="background:${esc(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${esc(e.summary)}">${compact?'':esc(shortText(e.summary,24))}</div>`;}).join('');
+      html+=`<div class="${cls.join(' ')}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${evHtml}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;
+    }
+    html+='</div>';root.innerHTML=html;
+    const prev=q('#mPrev');if(prev)prev.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthViewRev71();};
+    const next=q('#mNext');if(next)next.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthViewRev71();};
+    qq('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});
+  }
+  window.renderMonthView=renderMonthView=renderMonthViewRev71;
+  window.openMonthModal=openMonthModal=function(){
+    if(typeof removeStaleDeletes68==='function')try{removeStaleDeletes68();}catch(_){}
+    monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);
+    q('#modalTitle').textContent='Monatsübersicht';
+    q('#modalContent').innerHTML='<div id="monthView" class="rev71-month-ready"></div>';
+    q('#modalBackdrop').style.display='flex';
+    q('#saveModal').style.display='none';
+    renderMonthViewRev71();
+  };
+  const monthBtn=q('#monthBtn');if(monthBtn)monthBtn.onclick=openMonthModal;
+
+  const oldRenderRev71=window.render||render;
+  window.render=render=function(){const r=oldRenderRev71.apply(this,arguments);setTimeout(()=>{decorateVisibleRev71();},220);return r;};
+  const oldDayCardRev71=window.dayCard||dayCard;
+  window.dayCard=dayCard=function(date){const node=oldDayCardRev71.apply(this,arguments);applyDecorRev71(node,date,false);return node;};
+  function decorateVisibleRev71(){
+    ensureRev71();setVarsRev71();
+    qq('.day').forEach(day=>{const txt=day.querySelector('.day-title-date')?.textContent||'';const m=txt.match(/(\d{2})\.(\d{2})\.(\d{4})/);if(m)applyDecorRev71(day,new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00`),false);});
+    qq('[data-month-date]').forEach(cell=>applyDecorRev71(cell,new Date(cell.dataset.monthDate+'T00:00:00'),true));
+    const wrap=q('#sidebarDayTimelineRev049 .timeline-canvas-wrap');if(wrap){clearDecorRev71(wrap);wrap.classList.add('rev71-timeline-clean');}
+  }
+
+  function readSettingDraft(d){
+    if(q('#mTheme71'))d.theme=q('#mTheme71').value;
+    if(q('#mCornerStyle71'))d.cornerStyle=q('#mCornerStyle71').value;
+    if(q('#mOutlineStyle71'))d.outlineStyle=q('#mOutlineStyle71').value;
+    if(q('#mOutlineColor71'))d.outlineCustomColor=q('#mOutlineColor71').value;
+    if(q('#mWeekendEnabled71'))d.weekendHighlight.enabled=q('#mWeekendEnabled71').checked;
+    if(q('#mWeekendColor71'))d.weekendHighlight.color=q('#mWeekendColor71').value;
+    if(q('#mWeekendOpacity71'))d.weekendHighlight.opacity=clamp(q('#mWeekendOpacity71').value,0.05,0.70,REV71_DEFAULTS.weekendHighlight.opacity);
+    if(q('#mVacationEnabled71'))d.vacationHighlight.enabled=q('#mVacationEnabled71').checked;
+    if(q('#mVacationColor71'))d.vacationHighlight.color=q('#mVacationColor71').value;
+    if(q('#mVacationOpacity71'))d.vacationHighlight.opacity=clamp(q('#mVacationOpacity71').value,0.05,0.55,REV71_DEFAULTS.vacationHighlight.opacity);
+    if(q('#mTodayWidth71'))d.todayHighlight.borderWidth=clamp(q('#mTodayWidth71').value,1,10,REV71_DEFAULTS.todayHighlight.borderWidth);
+    if(q('#mTodayColor71'))d.todayHighlight.borderColor=q('#mTodayColor71').value;
+    if(q('#mTodayOpacity71'))d.todayHighlight.opacity=clamp(q('#mTodayOpacity71').value,0,0.65,REV71_DEFAULTS.todayHighlight.opacity);
+    if(q('#mSyncInterval71'))d.syncInterval=Number(q('#mSyncInterval71').value);
+  }
+  function applySettingDraft(d){
+    state.theme=d.theme;state.cornerStyle=d.cornerStyle;state.outlineStyle=d.outlineStyle;state.outlineCustomColor=d.outlineCustomColor;
+    state.weekendHighlight=Object.assign({},REV71_DEFAULTS.weekendHighlight,d.weekendHighlight);
+    state.vacationHighlight=Object.assign({},REV71_DEFAULTS.vacationHighlight,d.vacationHighlight);
+    state.todayHighlight=Object.assign({},REV71_DEFAULTS.todayHighlight,d.todayHighlight);
+    state.syncInterval=Number(d.syncInterval??15);
+    ensureRev71();setVarsRev71();if(typeof applyAppearance==='function')applyAppearance();if(typeof setupAutoSync==='function')setupAutoSync();
+  }
+  function colorInput(id,value){return `<input id="${id}" class="rev71-color-input" type="color" value="${esc(value)}">`;}
+  function settingsRev71(){
+    ensureRev71();
+    let active='general';
+    const d=JSON.parse(JSON.stringify({theme:state.theme||'light',cornerStyle:state.cornerStyle||'rounded',outlineStyle:state.outlineStyle||'current',outlineCustomColor:state.outlineCustomColor||'#64748b',weekendHighlight:state.weekendHighlight,vacationHighlight:state.vacationHighlight,todayHighlight:state.todayHighlight,syncInterval:state.syncInterval??15}));
+    q('#modalTitle').textContent='Allgemeine Einstellungen';
+    q('#modalContent').innerHTML=`<div class="rev71-settings"><div class="rev71-tabs"><button class="rev71-tab active" data-tab71="general">Allgemein</button><button class="rev71-tab" data-tab71="sync">Synchronisierung</button><button class="rev71-tab" data-tab71="info">Hinweise</button></div><div id="settingsTabContentRev71"></div></div>`;
+    q('#modalBackdrop').style.display='flex';q('#saveModal').style.display='';
+    function general(){const root=q('#settingsTabContentRev71');root.innerHTML=`<div class="rev71-grid">
+      <section class="rev71-card"><h3>Darstellung</h3><div class="rev71-row"><label>Erscheinung</label><select id="mTheme71"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div><div class="rev71-row"><label>Kanten</label><select id="mCornerStyle71"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="rev71-row"><label>Konturfarbe</label><div class="rev71-inline"><select id="mOutlineStyle71"><option value="current">Wie aktuell</option><option value="none">Keine</option><option value="gray">Grau</option><option value="black">Schwarz</option><option value="custom">Eigene Farbe</option></select>${colorInput('mOutlineColor71',d.outlineCustomColor)}</div></div></section>
+      <section class="rev71-card"><label class="rev71-check"><span><b>Wochenendtage anders anzeigen</b><small>Samstag und Sonntag erhalten optional eine eigene Hintergrundfarbe. Diese Markierung ist unabhängig von Urlaub.</small></span><input id="mWeekendEnabled71" type="checkbox"></label><div class="rev71-row"><label>Wochenendfarbe</label>${colorInput('mWeekendColor71',d.weekendHighlight.color)}</div><div class="rev71-row"><label>Wochenend-Deckkraft</label><input id="mWeekendOpacity71" type="range" min="0.05" max="0.70" step="0.01" value="${esc(d.weekendHighlight.opacity)}"></div></section>
+      <section class="rev71-card"><label class="rev71-check"><span><b>Urlaubstage anders anzeigen</b><small>Wenn ein sichtbarer ICS- oder eigener Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält, wird der gesamte Tag farblich hinterlegt. Bedingung: Der Tag darf kein Samstag und kein Sonntag sein.</small></span><input id="mVacationEnabled71" type="checkbox"></label><div class="rev71-row"><label>Urlaubsfarbe</label>${colorInput('mVacationColor71',d.vacationHighlight.color)}</div><div class="rev71-row"><label>Urlaubs-Deckkraft</label><input id="mVacationOpacity71" type="range" min="0.05" max="0.55" step="0.01" value="${esc(d.vacationHighlight.opacity)}"></div></section>
+      <section class="rev71-card"><h3>Aktueller Tag</h3><div class="rev71-row"><label>Linienstärke</label><input id="mTodayWidth71" type="range" min="1" max="10" step="1" value="${esc(d.todayHighlight.borderWidth)}"></div><div class="rev71-row"><label>Linienfarbe</label>${colorInput('mTodayColor71',d.todayHighlight.borderColor)}</div><div class="rev71-row"><label>Flächen-Deckkraft</label><input id="mTodayOpacity71" type="range" min="0" max="0.65" step="0.01" value="${esc(d.todayHighlight.opacity)}"></div></section>
+    </div>`;q('#mTheme71').value=d.theme;q('#mCornerStyle71').value=d.cornerStyle;q('#mOutlineStyle71').value=d.outlineStyle;q('#mWeekendEnabled71').checked=!!d.weekendHighlight.enabled;q('#mVacationEnabled71').checked=!!d.vacationHighlight.enabled;}
+    function sync(){const root=q('#settingsTabContentRev71');root.innerHTML=`<div class="rev71-grid"><section class="rev71-card"><h3>Synchronisierung</h3><div class="rev71-row"><label>Intervall</label><select id="mSyncInterval71"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><button class="btn primary" id="rev71HardSaveBtn" type="button">Alle Änderungen hart in Datenbank speichern</button><p class="rev71-help">Speichert App-State und relationale Tabellen sofort. Bestehende ICS-Link-Änderungen werden zusätzlich direkt in calendar_sources überschrieben.</p><button class="btn" id="rev71ReloadBtn" type="button">Daten aus Datenbank neu laden</button></section></div>`;q('#mSyncInterval71').value=String(d.syncInterval??15);q('#rev71HardSaveBtn').onclick=async()=>{readSettingDraft(d);applySettingDraft(d);if(typeof hardSaveRev70==='function')await hardSaveRev70(true);else if(typeof saveStateToCloud==='function')await saveStateToCloud();};q('#rev71ReloadBtn').onclick=async()=>{if(typeof loadStateFromCloud==='function')await loadStateFromCloud();render();toast('Datenbankdaten neu geladen.');};}
+    function info(){const root=q('#settingsTabContentRev71');root.innerHTML=`<div class="rev71-grid"><section class="rev71-card"><h3>Urlaubslogik</h3><p>Ein Tag wird nur in Urlaubsfarbe markiert, wenn ein sichtbarer Kalender einen ganztägigen Termin exakt mit dem Titel „Urlaub“ enthält und der Tag kein Samstag und kein Sonntag ist.</p></section><section class="rev71-card"><h3>Wochenendlogik</h3><p>Samstag und Sonntag können separat aktiviert, farblich gewählt und über eigene Deckkraft dargestellt werden. Dadurch flackern Urlaubstage am Wochenende nicht mehr in der Monatsansicht.</p></section><section class="rev71-card"><h3>Speicherlogik</h3><p>UI-Einstellungen liegen im App-State. Fachliche Daten wie Kalendergruppen, Kalenderquellen, eigene Termine, Tasks und Projekte bleiben in eigenen Supabase-Tabellen.</p></section><section class="rev71-card"><h3>ICS-Link-Änderungen</h3><p>Beim Speichern einer bestehenden ICS-Quelle werden Name, Link, Farbe und Sichtbarkeit direkt in der Tabelle calendar_sources aktualisiert. Wenn sich der Link ändert, wird der lokale ICS-Cache dieser Quelle geleert und neu geladen.</p></section></div>`;}
+    function renderActive(){if(active==='general')general();else if(active==='sync')sync();else info();}
+    renderActive();
+    qq('[data-tab71]').forEach(btn=>btn.onclick=()=>{readSettingDraft(d);active=btn.dataset.tab71;qq('[data-tab71]').forEach(b=>b.classList.toggle('active',b===btn));renderActive();});
+    q('#saveModal').onclick=async()=>{readSettingDraft(d);applySettingDraft(d);let ok=true;try{if(typeof hardSaveRev70==='function')ok=await hardSaveRev70(false);else if(typeof saveStateToCloud==='function')await saveStateToCloud();}catch(_){ok=false;}closeModal();render();toast(ok?'Einstellungen gespeichert.':'Einstellungen lokal übernommen, Cloud-Speicherung fehlgeschlagen.');};
+  }
+  window.openSyncSettingsModal=openSyncSettingsModal=settingsRev71;
+  function bindSettingsRev71(){const b=q('#settingsBtn');if(b)b.onclick=settingsRev71;}
+  bindSettingsRev71();setTimeout(bindSettingsRev71,250);setTimeout(bindSettingsRev71,1000);
+
+  function uuidRev71(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));}
+  async function saveSourceRev71(cal,link,idx){
+    if(!currentUser||!cal||!link||!uuidRev71(link.id))return false;
+    const groupId=cal.id||cal.dbId||link.calendarGroupId||link.calendar_group_id;
+    if(!uuidRev71(groupId))return false;
+    const row={id:link.id,user_id:currentUser.id,calendar_group_id:groupId,type:link.type||'ics',name:link.name||'Kalenderquelle',url:(link.type==='own'?null:(link.url||null)),color:link.color||state.colors?.event||'#7c5cff',visible:link.visible!==false,position:Number(idx||0)};
+    const {error}=await supabaseClient.from('calendar_sources').upsert(row,{onConflict:'id'});
+    if(error)throw error;
+    return true;
+  }
+  window.openICSSettingsModal=openICSSettingsModal=function(pane,idx){
+    if(!requireLogin())return;
+    const cal=state.calendars[pane];const link=cal?.links?.[idx];if(!link)return;
+    openModal(`ICS-Einstellungen · ${esc(link.name)}`,`<input id="mIcsName71" value="${esc(link.name)}" placeholder="Name des ICS-Kalenders"><input id="mIcsUrl71" value="${esc(link.url||'')}" placeholder="ICS-Link"><div class="field"><label>Farbe</label><input id="mIcsColor71" type="color" value="${esc(link.color||state.colors?.event||'#7c5cff')}"></div><div class="hint">Speichern überschreibt die bestehende Quelle sofort in calendar_sources. Wird der Link geändert, werden alte ICS-Termine dieser Quelle lokal entfernt und der Kalender neu geladen.</div>`,async()=>{
+      const oldUrl=String(link.url||'');
+      link.name=(q('#mIcsName71')?.value||'').trim()||link.name||'ICS Kalender';
+      link.url=normalizeICSUrl((q('#mIcsUrl71')?.value||'').trim());
+      link.color=q('#mIcsColor71')?.value||link.color||state.colors?.event||'#7c5cff';
+      (cal.events||[]).forEach(e=>{if(e.icsId===link.id){e.icsName=link.name;e.source=link.name;e.icsColor=link.color;}});
+      try{
+        await saveSourceRev71(cal,link,idx);
+        if(oldUrl!==String(link.url||''))cal.events=(cal.events||[]).filter(e=>e.icsId!==link.id);
+        if(typeof hardSaveRev70==='function')await hardSaveRev70(false);else if(typeof saveStateToCloud==='function')await saveStateToCloud();
+        if(oldUrl!==String(link.url||'')&&link.url)await loadICS(pane);
+        toast('ICS-Quelle gespeichert.');
+      }catch(error){toast('ICS-Quelle konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+  const style=document.createElement('style');
+  style.textContent=`
+    .rev71-settings{display:grid;grid-template-columns:190px minmax(0,1fr);gap:14px;align-items:start;color:#111827!important}.rev71-tabs{display:flex;flex-direction:column;gap:8px}.rev71-tab{width:100%;text-align:left;background:#f3f4f6!important;border:1px solid #cbd6e7!important;color:#111827!important;border-radius:12px;padding:10px 12px;font-weight:900}.rev71-tab.active{background:#d1d5db!important;border-color:#9ca3af!important}.rev71-grid{display:grid;gap:12px}.rev71-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;color:#111827!important}.rev71-card h3{margin:0;font-size:15px;color:#111827!important}.rev71-card p{margin:0;color:#334155;line-height:1.4}.rev71-card small,.rev71-help{display:block;color:#475569!important;font-size:12px;line-height:1.35;margin-top:3px}.rev71-row{display:grid;grid-template-columns:minmax(155px,230px) minmax(0,1fr);gap:10px;align-items:center}.rev71-row label{font-weight:800;color:#111827;font-size:13px}.rev71-inline{display:flex;gap:8px;align-items:center}.rev71-check{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}.rev71-check b{font-weight:1000;color:#111827!important}.rev71-check input[type="checkbox"]{width:20px;height:20px;accent-color:#0284c7}.rev71-color-input{height:38px;width:74px;padding:2px}.rev71-weekend-day{background:linear-gradient(0deg,var(--rev71WeekendBg),var(--rev71WeekendBg)),#0b1221!important}.rev71-vacation-day{background:linear-gradient(0deg,var(--rev71VacationBg),var(--rev71VacationBg)),#0b1221!important}.month-cell.rev71-weekend-cell{background:linear-gradient(0deg,var(--rev71WeekendBg),var(--rev71WeekendBg)),#070d1a!important}.month-cell.rev71-vacation-cell{background:linear-gradient(0deg,var(--rev71VacationBg),var(--rev71VacationBg)),#070d1a!important}body.light .rev71-weekend-day,body.light .rev71-vacation-day{background-color:#f8fbff!important}body.light .month-cell.rev71-weekend-cell,body.light .month-cell.rev71-vacation-cell{background-color:#f8fbff!important}.rev71-today-day{border-color:var(--rev71TodayBorderColor)!important;border-width:var(--rev71TodayBorderWidth)!important;box-shadow:0 0 0 1px var(--rev71TodayBg)!important}.month-cell.rev71-today-cell{border-color:var(--rev71TodayBorderColor)!important;border-width:var(--rev71TodayBorderWidth)!important}.rev71-timeline-clean{background:#050a16!important}body.light .rev71-timeline-clean{background:#fff!important}@media(max-width:760px){.rev71-settings{grid-template-columns:1fr}.rev71-tabs{flex-direction:row;flex-wrap:wrap}.rev71-tab{width:auto}.rev71-row{grid-template-columns:1fr;gap:5px}}
+  `;
+  document.head.appendChild(style);
+  ensureRev71();setVarsRev71();setTimeout(decorateVisibleRev71,450);
+})();
