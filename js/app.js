@@ -6260,3 +6260,175 @@ dayCard=function(date){
   document.head.appendChild(style);
   bindSettings72();setTimeout(()=>{bindSettings72();cleanTimeline72();},250);setTimeout(()=>{bindSettings72();cleanTimeline72();},1000);
 })();
+
+/* Rev 073: sofortige Tabellen-Speicherung für neue/edited Kalendergruppen, Taskgruppen und Quellen */
+(function(){
+  const rev73Now=()=>new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  const rev73Toast=msg=>{try{toast(msg);}catch(e){console.log(msg);}};
+  function rev73SetStatus(msg,type='ok'){
+    try{ if(typeof setCloudStatus==='function')setCloudStatus(msg,type); }catch(e){}
+    const diag=document.querySelector('#diagBox'); if(diag)diag.textContent=msg;
+  }
+  function rev73EnsureUuid(obj){ if(!obj.id||!isUuid(obj.id))obj.id=crypto.randomUUID(); return obj.id; }
+  async function rev73Upsert(table,row){
+    const {error}=await supabaseClient.from(table).upsert(row,{onConflict:'id'});
+    if(error)throw error;
+  }
+  async function rev73Delete(table,id){
+    if(!currentUser||!id)return;
+    const {error}=await supabaseClient.from(table).delete().eq('user_id',currentUser.id).eq('id',id);
+    if(error)throw error;
+  }
+  function rev73CalendarGroupRow(cal,position){
+    rev73EnsureUuid(cal); cal.dbId=cal.id;
+    return {id:cal.id,user_id:currentUser.id,name:cal.name||'Kalender',visible:cal.visible!==false,collapsed:cal.collapsed!==false,position:Number(position||0)};
+  }
+  function rev73CalendarSourceRow(cal,src,position){
+    rev73EnsureUuid(cal); rev73EnsureUuid(src); src.calendarGroupId=cal.id;
+    return {id:src.id,user_id:currentUser.id,calendar_group_id:cal.id,type:src.type||'ics',name:src.name||'Kalenderquelle',url:(src.type==='own'?null:(src.url||null)),color:src.color||state.colors?.event||defaultColors.event,visible:src.visible!==false,position:Number(position||0)};
+  }
+  function rev73TaskGroupRow(group,position){
+    rev73EnsureUuid(group);
+    return {id:group.id,user_id:currentUser.id,name:group.name||'Neue Gruppe',color:group.color||state.colors?.task||defaultColors.task,visible:group.visible!==false,position:Number(position||0)};
+  }
+  function rev73LongGroupRow(group,position){
+    rev73EnsureUuid(group);
+    return {id:group.id,user_id:currentUser.id,name:group.name||'Neue Gruppe',color:group.color||state.colors?.long||defaultColors.long,visible:group.visible!==false,position:Number(position||0)};
+  }
+  async function rev73SaveAppStateOnly(){
+    if(!currentUser)return;
+    const payload={user_id:currentUser.id,state:uiStateOnly(),updated_at:new Date().toISOString()};
+    const {error}=await supabaseClient.from('app_state').upsert(payload,{onConflict:'user_id'});
+    if(error)throw error;
+    try{localStorage.setItem(storeKey,JSON.stringify(uiStateOnly()));}catch(e){}
+  }
+
+  // Fachdatensnapshot wieder aktivieren: sicherer UPSERT ohne automatische Löschungen.
+  window.saveRelationalSnapshot=saveRelationalSnapshot=async function(){
+    if(!currentUser||suppressCloudSave)return false;
+    if(relationalSaveRunning){relationalSaveQueued=true;return false;}
+    relationalSaveRunning=true;
+    try{
+      ensureSettings();
+      (state.calendars||[]).forEach((cal,i)=>{rev73EnsureUuid(cal);cal.dbId=cal.id;(cal.links||[]).forEach(src=>{rev73EnsureUuid(src);src.calendarGroupId=cal.id;});});
+      (state.taskColumns||[]).forEach(rev73EnsureUuid);
+      (state.longColumns||[]).forEach(rev73EnsureUuid);
+      const uid=currentUser.id;
+      const calRows=(state.calendars||[]).map((c,i)=>rev73CalendarGroupRow(c,i));
+      const srcRows=[];(state.calendars||[]).forEach((c)=>{(c.links||[]).forEach((s,j)=>srcRows.push(rev73CalendarSourceRow(c,s,j)));});
+      const taskGroupRows=(state.taskColumns||[]).map((g,i)=>rev73TaskGroupRow(g,i));
+      const taskRows=(state.tasks||[]).map((t,i)=>{if(!isUuid(t.id))t.id=crypto.randomUUID();return {id:t.id,user_id:uid,task_group_id:isUuid(t.columnId)?t.columnId:null,title:t.title||'Ohne Titel',note:t.note||null,task_date:t.date||fmtDate(new Date()),done:!!t.done,completed_date:t.completedDate||null,position:i};});
+      const longGroupRows=(state.longColumns||[]).map((g,i)=>rev73LongGroupRow(g,i));
+      const longRows=(state.longterm||[]).map((t,i)=>{if(!isUuid(t.id))t.id=crypto.randomUUID();return {id:t.id,user_id:uid,long_task_group_id:isUuid(t.columnId)?t.columnId:null,title:t.title||'Ohne Titel',note:t.note||null,done:!!t.done,completed_date:t.completedDate||null,position:i};});
+      const ownRows=[];(state.calendars||[]).forEach(c=>(c.ownEvents||[]).forEach((e,i)=>{if(!isUuid(e.id))e.id=crypto.randomUUID();ownRows.push({id:e.id,user_id:uid,calendar_source_id:e.sourceId,title:e.summary||e.title||'Ohne Titel',location:e.location||null,description:e.description||null,start_time:e.start,end_time:e.end||null,all_day:!!e.allDay,recurrence:e.recurrence||'none',travel_time:e.travelTime||null,status:e.status||'active'});}));
+      await upsertRows('calendar_groups',calRows); await upsertRows('calendar_sources',srcRows);
+      await upsertRows('task_groups',taskGroupRows); await upsertRows('tasks',taskRows);
+      await upsertRows('long_task_groups',longGroupRows); await upsertRows('long_tasks',longRows); await upsertRows('own_events',ownRows);
+      await rev73SaveAppStateOnly();
+      rev73SetStatus('Sofort gespeichert: '+rev73Now(),'ok');
+      return true;
+    }catch(error){
+      console.error('Rev073 Sofortspeicherung fehlgeschlagen',error);
+      rev73SetStatus('Sofort-Speichern fehlgeschlagen: '+(error.message||error),'bad');
+      throw error;
+    }finally{
+      relationalSaveRunning=false;
+      if(relationalSaveQueued){relationalSaveQueued=false;setTimeout(()=>saveRelationalSnapshot().catch(console.error),120);}
+    }
+  };
+  window.scheduleRelationalSave=scheduleRelationalSave=function(){
+    if(!currentUser||suppressCloudSave)return;
+    clearTimeout(relationalSaveTimer);
+    relationalSaveTimer=setTimeout(()=>saveRelationalSnapshot().catch(console.error),120);
+  };
+  window.hardSaveRev70=async function(showToast=true){
+    if(!currentUser){if(showToast)rev73Toast('Nicht angemeldet. Speicherung nicht möglich.');return false;}
+    try{await saveRelationalSnapshot(); if(showToast)rev73Toast('App-State und Tabellen sofort gespeichert.'); return true;}
+    catch(error){if(showToast)rev73Toast('Speichern fehlgeschlagen: '+(error.message||error)); return false;}
+  };
+  persist=function(){
+    if(currentUser){try{localStorage.setItem(storeKey,JSON.stringify(uiStateOnly()));}catch(e){}}
+    else{try{localStorage.removeItem(storeKey);}catch(e){}}
+    if(cloudReady&&currentUser&&!suppressCloudSave){clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(()=>rev73SaveAppStateOnly().catch(console.error),400);scheduleRelationalSave();}
+  };
+
+  // Kalendergruppe: erst DB speichern, dann Modal schließen und rendern.
+  window.openAddCalendarModal=openAddCalendarModal=function(){
+    if(!requireLogin())return;
+    $('#saveModal').style.display='';$('#modalTitle').textContent='Kalender hinzufügen';
+    $('#modalContent').innerHTML='<input id="mNewCalName" placeholder="Kalendername, z. B. Geschäftskalender"><div class="hint">Die Kalendergruppe wird sofort in calendar_groups gespeichert.</div>';
+    $('#modalBackdrop').style.display='flex';
+    setTimeout(()=>$('#mNewCalName')?.focus(),0);
+    $('#saveModal').onclick=async()=>{
+      const name=$('#mNewCalName')?.value.trim()||`Kalender ${(state.calendars||[]).length+1}`;
+      const cal={id:crypto.randomUUID(),dbId:null,name,links:[],events:[],ownEvents:[],status:'Gespeichert.',visible:true,collapsed:true};
+      try{await rev73Upsert('calendar_groups',rev73CalendarGroupRow(cal,(state.calendars||[]).length));state.calendars.push(cal);closeModal();render();rev73Toast('Kalendergruppe gespeichert.');}
+      catch(error){rev73Toast('Kalendergruppe konnte nicht gespeichert werden: '+(error.message||error));}
+    };
+    $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}};
+  };
+
+  // Tagestask-Gruppe: neue Gruppen und Umbenennungen sofort in task_groups speichern.
+  window.openTaskColumnModal=openTaskColumnModal=function(idx){
+    if(!requireLogin())return;ensureSettings();
+    const isNew=idx===null||idx===undefined; const group=isNew?{id:crypto.randomUUID(),name:'',color:state.colors.task||defaultColors.task,visible:true}:state.taskColumns[idx];
+    $('#saveModal').style.display='';$('#modalTitle').textContent=isNew?'Tagestask-Gruppe hinzufügen':'Tagestask-Gruppe bearbeiten';
+    $('#modalContent').innerHTML=`<input id="mTaskColName" value="${escapeHtml(group.name||'')}" placeholder="Name, z. B. Geschäftlich"><div class="field"><label>Farbe</label><input id="mTaskColColor73" type="color" value="${escapeHtml(group.color||state.colors.task||defaultColors.task)}"></div><div class="hint">Speichern schreibt sofort in task_groups.</div>`;
+    $('#modalBackdrop').style.display='flex'; setTimeout(()=>$('#mTaskColName')?.focus(),0);
+    $('#saveModal').onclick=async()=>{
+      group.name=$('#mTaskColName')?.value.trim()||'Neue Gruppe'; group.color=$('#mTaskColColor73')?.value||group.color||state.colors.task||defaultColors.task;
+      try{await rev73Upsert('task_groups',rev73TaskGroupRow(group,isNew?(state.taskColumns||[]).length:idx)); if(isNew)state.taskColumns.push(group); closeModal();render();rev73Toast('Tagestask-Gruppe gespeichert.');}
+      catch(error){rev73Toast('Tagestask-Gruppe konnte nicht gespeichert werden: '+(error.message||error));}
+    };
+    $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}};
+  };
+
+  // Langfristige Gruppe: analog sofort speichern.
+  window.openLongColumnModal=openLongColumnModal=function(idx){
+    if(!requireLogin())return;ensureRev033State();
+    const isNew=idx===null||idx===undefined; const group=isNew?{id:crypto.randomUUID(),name:'',color:state.colors.long||defaultColors.long,visible:true}:state.longColumns[idx];
+    $('#saveModal').style.display='';$('#modalTitle').textContent=isNew?'Langfristige Gruppe hinzufügen':'Langfristige Gruppe bearbeiten';
+    $('#modalContent').innerHTML=`<input id="mLongColName" value="${escapeHtml(group.name||'')}" placeholder="Name, z. B. Geschäftlich"><div class="field"><label>Farbe</label><input id="mLongColColor73" type="color" value="${escapeHtml(group.color||state.colors.long||defaultColors.long)}"></div><div class="hint">Speichern schreibt sofort in long_task_groups.</div>`;
+    $('#modalBackdrop').style.display='flex'; setTimeout(()=>$('#mLongColName')?.focus(),0);
+    $('#saveModal').onclick=async()=>{
+      group.name=$('#mLongColName')?.value.trim()||'Neue Gruppe'; group.color=$('#mLongColColor73')?.value||group.color||state.colors.long||defaultColors.long;
+      try{await rev73Upsert('long_task_groups',rev73LongGroupRow(group,isNew?(state.longColumns||[]).length:idx)); if(isNew)state.longColumns.push(group); closeModal();render();rev73Toast('Langfristige Gruppe gespeichert.');}
+      catch(error){rev73Toast('Langfristige Gruppe konnte nicht gespeichert werden: '+(error.message||error));}
+    };
+    $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}};
+  };
+
+  // Neue ICS-/eigene Quellen: vorhandene Gruppe vorher absichern, Quelle direkt speichern.
+  window.openICSModal=openICSModal=function(pane){
+    if(!requireLogin())return; const cal=state.calendars[pane]; if(!cal)return;
+    $('#saveModal').style.display='';$('#modalTitle').textContent=`ICS-Link hinzufügen · ${escapeHtml(cal.name)}`;
+    $('#modalContent').innerHTML='<input id="mName" placeholder="Name, z. B. Privat Kalender"><input id="mUrl" placeholder="webcal://... oder https://.../calendar.ics"><div class="hint">Die Quelle wird sofort in calendar_sources gespeichert.</div>';
+    $('#modalBackdrop').style.display='flex'; setTimeout(()=>$('#mName')?.focus(),0);
+    $('#saveModal').onclick=async()=>{
+      const name=$('#mName')?.value.trim()||'ICS Kalender'; const url=normalizeICSUrl($('#mUrl')?.value.trim()||''); if(!url)return rev73Toast('Kein ICS-Link gespeichert.');
+      const src={id:crypto.randomUUID(),type:'ics',name,url,color:state.colors?.event||defaultColors.event,visible:true};
+      try{await rev73Upsert('calendar_groups',rev73CalendarGroupRow(cal,pane));await rev73Upsert('calendar_sources',rev73CalendarSourceRow(cal,src,(cal.links||[]).length));cal.links=cal.links||[];cal.links.push(src);closeModal();render();await loadICS(pane);rev73Toast('ICS-Kalenderquelle gespeichert.');}
+      catch(error){rev73Toast('ICS-Quelle konnte nicht gespeichert werden: '+(error.message||error));}
+    };
+  };
+  window.openCreateOwnSourceModal=openCreateOwnSourceModal=function(pane){
+    if(!requireLogin())return; const cal=state.calendars[pane]; if(!cal)return;
+    $('#saveModal').style.display='';$('#modalTitle').textContent=`Eigenen Kalender hinzufügen · ${escapeHtml(cal.name)}`;
+    $('#modalContent').innerHTML='<input id="mOwnName" placeholder="Name, z. B. Eigene Termine"><div class="hint">Der eigene Kalender wird sofort in calendar_sources gespeichert.</div>';
+    $('#modalBackdrop').style.display='flex'; setTimeout(()=>$('#mOwnName')?.focus(),0);
+    $('#saveModal').onclick=async()=>{
+      const src={id:crypto.randomUUID(),type:'own',name:$('#mOwnName')?.value.trim()||'Eigener Kalender',url:null,color:state.colors?.event||defaultColors.event,visible:true};
+      try{await rev73Upsert('calendar_groups',rev73CalendarGroupRow(cal,pane));await rev73Upsert('calendar_sources',rev73CalendarSourceRow(cal,src,(cal.links||[]).length));cal.links=cal.links||[];cal.links.push(src);closeModal();render();rev73Toast('Eigener Kalender gespeichert.');}
+      catch(error){rev73Toast('Eigener Kalender konnte nicht gespeichert werden: '+(error.message||error));}
+    };
+  };
+
+  // Reload-Button: vor dem Laden noch ausstehende lokale Änderungen in Tabellen sichern.
+  const oldReload73=window.reloadDatabaseDataRev044||reloadDatabaseDataRev044;
+  window.reloadDatabaseDataRev044=reloadDatabaseDataRev044=async function(){
+    if(!requireLogin())return;
+    try{await saveRelationalSnapshot();}catch(e){rev73Toast('Vor dem Neuladen konnte nicht gespeichert werden: '+(e.message||e));return;}
+    return oldReload73.apply(this,arguments);
+  };
+  setTimeout(()=>{const btn=document.querySelector('#reloadDbBtn'); if(btn)btn.onclick=reloadDatabaseDataRev044;},300);
+})();

@@ -36,3 +36,17 @@ Die Datei ist noch nicht fachlich vollständig modularisiert. Diese Revision beh
 Auszutauschende Dateien:
 - `js/app.js`
 - optional `README.md` und `package.json` für Versionsdokumentation
+
+
+## Revision 073
+
+Änderungen:
+- Neue Kalendergruppen werden erst nach erfolgreichem INSERT/UPSERT in `calendar_groups` lokal angezeigt.
+- Neue Tagestask-Gruppen werden sofort in `task_groups` gespeichert.
+- Neue langfristige Gruppen werden sofort in `long_task_groups` gespeichert.
+- Neue ICS- und eigene Kalenderquellen sichern vorher die Kalendergruppe und schreiben anschließend direkt in `calendar_sources`.
+- Der grüne Refresh-Button speichert ausstehende relationale Änderungen vor dem Neuladen.
+- `saveRelationalSnapshot` ist wieder aktiv, aber weiterhin sicher: nur UPSERT, keine automatische Löschung fehlender Datensätze.
+
+Nicht umgesetzt:
+- Keine automatische Tabellenbereinigung beim Speichern, damit ein Reload oder Zwischenstand keine bestehenden Supabase-Daten versehentlich löscht.
