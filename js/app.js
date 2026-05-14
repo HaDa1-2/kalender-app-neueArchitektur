@@ -167,7 +167,6 @@ function getBlankState(){return structuredClone(blankInitialState);}
 let state=getBlankState();
 const defaultColors={event:'#7c5cff',task:'#ffb020',overdue:'#ff5050',long:'#48d38b'};
 const palette=['#7c5cff','#39bdf8','#22c55e','#ffb020','#ff5050','#ec4899','#14b8a6','#f97316','#a855f7','#64748b','#111827','#ffffff'];
-function makeId(prefix='id'){return prefix+'_'+Math.random().toString(36).slice(2)+'_'+Date.now().toString(36);}
 function ensureSettings(){
   state.theme=state.theme||'light';
   state.dayRows=Number(state.dayRows||1);
@@ -191,7 +190,6 @@ function ensureSettings(){
   state.panes=Math.max(1,state.calendars.filter(c=>c.visible!==false).length);
 }
 ensureSettings();
-const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 function resetVisibleStateAfterLogout(){
   clearTimeout(cloudSaveTimer);
   localStorage.removeItem(storeKey);
@@ -319,12 +317,6 @@ async function cloudLogout(){
   resetVisibleStateAfterLogout();
   setCloudStatus('Abgemeldet. Kalenderdaten wurden aus dieser Ansicht entfernt.','warn');document.body.classList.add('login-required');openCloudModal();
 }
-function escapeHtml(s){return String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
-function shortText(s,max=30){s=String(s??'').trim();return s.length>max?s.slice(0,Math.max(0,max-1)).trimEnd()+'…':s;}
-function fmtDate(d){const x=new Date(d);const y=x.getFullYear();const m=String(x.getMonth()+1).padStart(2,'0');const day=String(x.getDate()).padStart(2,'0');return `${y}-${m}-${day}`} function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x} function sameDay(a,b){return fmtDate(a)===fmtDate(b)} function deDate(d){return d.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})} function dayNum(d){return d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}
-function dayHeaderLabel(d){return d.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'numeric',year:'numeric'});}
-function getISOWeek(d){const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const day=x.getUTCDay()||7;x.setUTCDate(x.getUTCDate()+4-day);const yearStart=new Date(Date.UTC(x.getUTCFullYear(),0,1));return Math.ceil((((x-yearStart)/86400000)+1)/7);}
-function recurrenceLabel(r){return ({none:'Keine Wiederholung',weekly:'Wöchentlich',monthly:'Monatlich',yearly:'Jährlich'})[r||'none']||'Keine Wiederholung';}
 function parseRRule(rrule){const out={};String(rrule||'').split(';').forEach(part=>{const [k,v]=part.split('=');if(k)out[k.toUpperCase()]=v;});return out;}
 function parseUntil(v){if(!v)return null;const p=parseICalDate(v.replace(/Z$/,'Z'));return p?new Date(p.iso):null;}
 function recurrenceMatches(e,date){

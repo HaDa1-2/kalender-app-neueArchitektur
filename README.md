@@ -108,3 +108,22 @@ Nicht umgesetzt:
 
 Nicht umgesetzt:
 - Keine Änderung an Speicherlogik oder Datenbankstruktur in dieser Revision.
+
+
+## Revision 079
+
+Änderungen:
+- Neue Datei `js/core/utils.js` ergänzt.
+- Reine Hilfsfunktionen aus `js/app.js` ausgelagert: DOM-Selectoren, ID-Erzeugung, HTML-Escaping, Textkürzung, Datumshilfen, ISO-Kalenderwoche und Wiederholungslabel.
+- `index.html` lädt `js/core/utils.js` vor `js/app.js`.
+- Keine Änderung an Supabase-Zugang, Datenbankstruktur, Speicherlogik, Löschlogik, ICS-Proxy oder Monatslayout.
+- Syntaxprüfung für `js/core/utils.js` und `js/app.js` mit `node --check` erfolgreich.
+
+Auszutauschende Dateien:
+- `index.html`
+- `js/app.js`
+- `js/core/utils.js`
+- optional `README.md`, `package.json`
+
+Nicht umgesetzt:
+- Keine fachliche Aufteilung der Render-, Modal-, Supabase- oder ICS-Logik. Das wäre deutlich riskanter und sollte erst nach einem Funktionstest dieser Sicherheitsrevision erfolgen.

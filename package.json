@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev078-modular",
-  "version": "0.78.0",
+  "name": "kalender-app-rev079-modular-safe",
+  "version": "0.79.0",
   "private": true,
-  "description": "Revision 076: stabile Speicherlogik, einheitliche Löschbestätigung, Settings-Farbauswahl, neutraler Zeitstrahl",
+  "description": "Revision 079: risikoarme Utility-Modularisierung ohne Speicher- oder UI-Logikänderung",
   "scripts": {
     "start": "vercel dev"
   }
