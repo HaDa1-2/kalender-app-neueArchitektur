@@ -1,6 +1,6 @@
 {
-  "name": "kalender-app-rev073-modular",
-  "version": "0.73.0",
+  "name": "kalender-app-rev074-modular",
+  "version": "0.74.0",
   "private": true,
   "description": "Modularisierte Kalender-App auf Basis kalender_rev_068_monolith_final_clean.html",
   "scripts": {

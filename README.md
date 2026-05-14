@@ -50,3 +50,15 @@ Auszutauschende Dateien:
 
 Nicht umgesetzt:
 - Keine automatische Tabellenbereinigung beim Speichern, damit ein Reload oder Zwischenstand keine bestehenden Supabase-Daten versehentlich löscht.
+
+
+## Revision 074
+
+Änderungen:
+- Globale Sofort-Speicherung für Kalendergruppen, Kalenderquellen, Tagestask-Gruppen, Tagestasks, langfristige Gruppen, langfristige Tasks, eigene Termine, Projekte und Projekt-Tasks ergänzt.
+- Der grüne Refresh nutzt weiterhin vorher die aktive Speicherung, damit lokale Änderungen nicht durch einen Datenbank-Reload überschrieben werden.
+- Der Zeitstrahl ist von Urlaubs-, Wochenend- und Heute-Hintergründen entkoppelt und bleibt neutral/weiß.
+- Bestehende Wochenend-/Urlaubs-Klassen werden am Zeitstrahl nach Navigation aktiv entfernt, um Flackern zu unterbinden.
+
+Nicht umgesetzt:
+- Keine automatische Löschung fehlender Zeilen beim Snapshot. Das bleibt absichtlich deaktiviert, um Datenverlust in Supabase zu vermeiden.

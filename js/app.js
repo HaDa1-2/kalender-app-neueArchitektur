@@ -6432,3 +6432,181 @@ dayCard=function(date){
   };
   setTimeout(()=>{const btn=document.querySelector('#reloadDbBtn'); if(btn)btn.onclick=reloadDatabaseDataRev044;},300);
 })();
+
+/* Rev 074: globale Sofort-Speicherung für Fachobjekte + Zeitstrahl farbneutral */
+(function(){
+  const r74LogPrefix='Rev074';
+  function r74Toast(msg){try{toast(msg);}catch(e){console.log(msg);}}
+  function r74Status(msg,type='ok'){
+    try{if(typeof setCloudStatus==='function')setCloudStatus(msg,type);}catch(e){}
+    const diag=document.querySelector('#diagBox'); if(diag)diag.textContent=msg;
+  }
+  function r74Uuid(obj){if(obj && (!obj.id || !isUuid(obj.id)))obj.id=crypto.randomUUID();return obj?.id;}
+  function r74Title(v,fallback='Aufgabe'){return String(v||'').trim()||fallback;}
+  async function r74Upsert(table,rows){
+    const arr=Array.isArray(rows)?rows:[rows];
+    if(!arr.length)return;
+    const {error}=await supabaseClient.from(table).upsert(arr,{onConflict:'id'});
+    if(error)throw error;
+  }
+  function r74AppState(){
+    try{return typeof uiStateOnly==='function'?uiStateOnly():{days:state.days,dayRows:state.dayRows,startMode:state.startMode,offset:state.offset,theme:state.theme,cornerStyle:state.cornerStyle,colors:state.colors,viewModes:state.viewModes,activeViewMode:state.activeViewMode,configCollapsed:state.configCollapsed,sidebarCollapsed:state.sidebarCollapsed,weekendHighlight:state.weekendHighlight,vacationHighlight:state.vacationHighlight,todayHighlight:state.todayHighlight,timelineDayOffset:state.timelineDayOffset};}
+    catch(_){return {};}
+  }
+  async function r74SaveAppStateOnly(){
+    if(!currentUser)return false;
+    const {error}=await supabaseClient.from('app_state').upsert({user_id:currentUser.id,state:r74AppState(),updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    if(error)throw error;
+    try{localStorage.setItem(storeKey,JSON.stringify(r74AppState()));}catch(_){ }
+    return true;
+  }
+  function r74CalendarGroupRow(cal,position){r74Uuid(cal);cal.dbId=cal.id;return {id:cal.id,user_id:currentUser.id,name:cal.name||'Kalender',visible:cal.visible!==false,collapsed:cal.collapsed!==false,position:Number(position||0)};}
+  function r74SourceRow(cal,src,position){r74Uuid(cal);r74Uuid(src);src.calendarGroupId=cal.id;return {id:src.id,user_id:currentUser.id,calendar_group_id:cal.id,type:src.type||'ics',name:src.name||'Kalenderquelle',url:src.type==='own'?null:(src.url||null),color:src.color||state.colors?.event||defaultColors.event,visible:src.visible!==false,position:Number(position||0)};}
+  function r74TaskGroupRow(g,position){r74Uuid(g);return {id:g.id,user_id:currentUser.id,name:g.name||'Neue Gruppe',color:g.color||state.colors?.task||defaultColors.task,visible:g.visible!==false,position:Number(position||0)};}
+  function r74TaskRow(t,position){r74Uuid(t);return {id:t.id,user_id:currentUser.id,task_group_id:isUuid(t.columnId)?t.columnId:null,title:r74Title(t.title),note:t.note||null,task_date:t.date||fmtDate(new Date()),done:!!t.done,completed_date:t.completedDate||null,position:Number(position||0)};}
+  function r74LongGroupRow(g,position){r74Uuid(g);return {id:g.id,user_id:currentUser.id,name:g.name||'Neue Gruppe',color:g.color||state.colors?.long||defaultColors.long,visible:g.visible!==false,position:Number(position||0)};}
+  function r74LongTaskRow(t,position){r74Uuid(t);return {id:t.id,user_id:currentUser.id,long_task_group_id:isUuid(t.columnId)?t.columnId:null,title:r74Title(t.title),note:t.note||null,done:!!t.done,completed_date:t.completedDate||null,position:Number(position||0)};}
+  function r74OwnEventRow(e){r74Uuid(e);return {id:e.id,user_id:currentUser.id,calendar_source_id:e.sourceId,title:r74Title(e.summary||e.title,'Termin'),location:e.location||null,description:e.description||null,start_time:e.start,end_time:e.end||null,all_day:!!e.allDay,recurrence:e.recurrence||'none',travel_time:e.travelTime||null,status:e.status||'active'};}
+  function r74ProjectRow(p,position){r74Uuid(p);return {id:p.id,user_id:currentUser.id,name:p.name||'Neues Projekt',description:p.description||null,color:p.color||'#7c5cff',sort_order:Number(p.sortOrder ?? p.sort_order ?? position ?? 0),is_archived:!!(p.isArchived||p.is_archived)};}
+  function r74ProjectTaskRow(t,position){r74Uuid(t);return {id:t.id,user_id:currentUser.id,project_id:t.projectId||t.project_id,title:r74Title(t.title),note:t.note||null,due_date:t.dueDate||t.due_date||null,done:!!t.done,completed_date:t.completedDate||t.completed_date||null,sort_order:Number(t.sortOrder ?? t.sort_order ?? position ?? 0)};}
+
+  // Vollständiger Snapshot: UI-State + alle aktiven Fachobjekte. Keine automatische Löschung, damit nichts versehentlich entfernt wird.
+  window.saveRelationalSnapshot=saveRelationalSnapshot=async function(){
+    if(!currentUser||suppressCloudSave)return false;
+    if(relationalSaveRunning){relationalSaveQueued=true;return false;}
+    relationalSaveRunning=true;
+    try{
+      ensureSettings();
+      if(typeof ensureProjectsRev047==='function')ensureProjectsRev047();
+      const calRows=(state.calendars||[]).map((c,i)=>r74CalendarGroupRow(c,i));
+      const sourceRows=[];(state.calendars||[]).forEach(c=>(c.links||[]).forEach((s,i)=>sourceRows.push(r74SourceRow(c,s,i))));
+      const taskGroupRows=(state.taskColumns||[]).map((g,i)=>r74TaskGroupRow(g,i));
+      const taskRows=(state.tasks||[]).map((t,i)=>r74TaskRow(t,i));
+      const longGroupRows=(state.longColumns||[]).map((g,i)=>r74LongGroupRow(g,i));
+      const longRows=(state.longterm||[]).map((t,i)=>r74LongTaskRow(t,i));
+      const ownRows=[];(state.calendars||[]).forEach(c=>(c.ownEvents||[]).forEach(e=>ownRows.push(r74OwnEventRow(e))));
+      const projectRows=(state.projects||[]).map((p,i)=>r74ProjectRow(p,i));
+      const projectTaskRows=(state.projectTasks||[]).filter(t=>t.projectId||t.project_id).map((t,i)=>r74ProjectTaskRow(t,i));
+      await r74Upsert('calendar_groups',calRows); await r74Upsert('calendar_sources',sourceRows);
+      await r74Upsert('task_groups',taskGroupRows); await r74Upsert('tasks',taskRows);
+      await r74Upsert('long_task_groups',longGroupRows); await r74Upsert('long_tasks',longRows);
+      await r74Upsert('own_events',ownRows); await r74Upsert('projects',projectRows); await r74Upsert('project_tasks',projectTaskRows);
+      await r74SaveAppStateOnly();
+      r74Status('Sofort gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),'ok');
+      return true;
+    }catch(error){
+      console.error(r74LogPrefix+' Sofortspeicherung fehlgeschlagen',error);
+      r74Status('Sofort-Speichern fehlgeschlagen: '+(error.message||error),'bad');
+      throw error;
+    }finally{
+      relationalSaveRunning=false;
+      if(relationalSaveQueued){relationalSaveQueued=false;setTimeout(()=>saveRelationalSnapshot().catch(console.error),80);}
+    }
+  };
+  window.hardSaveRev70=async function(showToast=true){
+    if(!currentUser){if(showToast)r74Toast('Nicht angemeldet. Speicherung nicht möglich.');return false;}
+    try{await saveRelationalSnapshot();if(showToast)r74Toast('Alles sofort gespeichert.');return true;}
+    catch(error){if(showToast)r74Toast('Speichern fehlgeschlagen: '+(error.message||error));return false;}
+  };
+  window.scheduleRelationalSave=scheduleRelationalSave=function(){
+    if(!currentUser||suppressCloudSave)return;
+    clearTimeout(relationalSaveTimer);
+    relationalSaveTimer=setTimeout(()=>saveRelationalSnapshot().catch(console.error),60);
+  };
+  persist=function(){
+    if(currentUser){try{localStorage.setItem(storeKey,JSON.stringify(r74AppState()));}catch(_){ }}
+    else{try{localStorage.removeItem(storeKey);}catch(_){ }}
+    if(cloudReady&&currentUser&&!suppressCloudSave){clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(()=>r74SaveAppStateOnly().catch(console.error),180);scheduleRelationalSave();}
+  };
+  function r74AfterMutation(){setTimeout(()=>saveRelationalSnapshot().catch(console.error),20);}
+
+  // Direkte Speicherpfade für neu erstellte Hauptobjekte.
+  window.openTaskModal=openTaskModal=function(date=fmtDate(new Date())){
+    if(!requireLogin())return;ensureSettings();
+    openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea><div class="hint">Wird sofort in tasks gespeichert. Ohne Titel wird „Aufgabe“ verwendet. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const t={id:crypto.randomUUID(),title:r74Title($('#mTitle')?.value),date:$('#mDate')?.value||date,done:false,note:($('#mNote')?.value||'').trim(),columnId:$('#mTaskColumn')?.value};
+      try{await r74Upsert('tasks',r74TaskRow(t,(state.tasks||[]).length));state.tasks.push(t);render();r74Toast('Tagestask gespeichert.');}
+      catch(error){r74Toast('Tagestask konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+  window.openLongModal=openLongModal=function(){
+    if(!requireLogin())return;ensureSettings();
+    const groups=state.longColumns&&state.longColumns.length?state.longColumns:[{id:'long_default',name:'Allgemein'}];
+    openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><select id="mLongColumn">${groups.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><textarea id="mNote" rows="3" placeholder="Notiz"></textarea><div class="hint">Wird sofort in long_tasks gespeichert. Ohne Titel wird „Aufgabe“ verwendet. Enter speichert, Shift+Enter erzeugt einen Zeilenumbruch.</div>`,async()=>{
+      const t={id:crypto.randomUUID(),title:r74Title($('#mTitle')?.value),done:false,note:($('#mNote')?.value||'').trim(),createdDate:fmtDate(new Date()),completedDate:null,columnId:$('#mLongColumn')?.value||groups[0]?.id};
+      try{await r74Upsert('long_tasks',r74LongTaskRow(t,(state.longterm||[]).length));state.longterm.push(t);render();r74Toast('Langfristiger Task gespeichert.');}
+      catch(error){r74Toast('Langfristiger Task konnte nicht gespeichert werden: '+(error.message||error));}
+    });
+  };
+  if(typeof openProjectModalRev047==='function'){
+    window.openProjectModalRev047=openProjectModalRev047=function(id){
+      if(!requireLogin())return;if(typeof ensureProjectsRev047==='function')ensureProjectsRev047();
+      const isNew=!id; const p=isNew?{id:crypto.randomUUID(),name:'',description:'',color:'#7c5cff',sortOrder:(state.projects||[]).length,isArchived:false}:((state.projects||[]).find(x=>String(x.id)===String(id))||null);
+      if(!p)return r74Toast('Projekt nicht gefunden.');
+      openModal(isNew?'Projekt hinzufügen':'Projekt bearbeiten',`<input id="mProjectName" value="${escapeHtml(p.name||'')}" placeholder="Projektname"><textarea id="mProjectDesc" rows="4" placeholder="Beschreibung / Kontext">${escapeHtml(p.description||'')}</textarea><div class="field"><label>Projektfarbe</label><input id="mProjectColor74" type="color" value="${escapeHtml(p.color||'#7c5cff')}"></div><div class="hint">Projekt wird sofort in projects gespeichert.</div>`,async()=>{
+        p.name=r74Title($('#mProjectName')?.value,'Neues Projekt');p.description=($('#mProjectDesc')?.value||'').trim();p.color=$('#mProjectColor74')?.value||p.color||'#7c5cff';
+        try{await r74Upsert('projects',r74ProjectRow(p,isNew?(state.projects||[]).length:(state.projects||[]).findIndex(x=>String(x.id)===String(p.id))));if(isNew)state.projects.push(p);closeModal();render();r74Toast('Projekt gespeichert.');}
+        catch(error){r74Toast('Projekt konnte nicht gespeichert werden: '+(error.message||error));}
+      });
+    };
+  }
+  if(typeof openProjectTaskModalRev047==='function'){
+    window.openProjectTaskModalRev047=openProjectTaskModalRev047=function(projectId){
+      if(!requireLogin())return;if(typeof ensureProjectsRev047==='function')ensureProjectsRev047();
+      const p=(state.projects||[]).find(x=>String(x.id)===String(projectId));if(!p)return r74Toast('Projekt nicht gefunden.');
+      openModal(`Projekt-Task hinzufügen · ${escapeHtml(p.name)}`,`<input id="mProjectTaskTitle" placeholder="Aufgabe"><input id="mProjectTaskDue" type="date"><textarea id="mProjectTaskNote" rows="4" placeholder="Notiz / Kontext"></textarea><div class="hint">Wird sofort in project_tasks gespeichert. Ohne Titel wird „Aufgabe“ verwendet.</div>`,async()=>{
+        const t={id:crypto.randomUUID(),projectId:p.id,title:r74Title($('#mProjectTaskTitle')?.value),dueDate:$('#mProjectTaskDue')?.value||null,note:($('#mProjectTaskNote')?.value||'').trim(),done:false,completedDate:null,sortOrder:(state.projectTasks||[]).length};
+        try{await r74Upsert('project_tasks',r74ProjectTaskRow(t,t.sortOrder));state.projectTasks.push(t);render();r74Toast('Projekt-Task gespeichert.');}
+        catch(error){r74Toast('Projekt-Task konnte nicht gespeichert werden: '+(error.message||error));}
+      });
+    };
+  }
+  if(typeof openOwnEventModal==='function'){
+    window.openOwnEventModal=openOwnEventModal=function(pane,date=fmtDate(new Date())){
+      if(!requireLogin())return;ensureSettings();
+      const cal=state.calendars[pane];const ownSources=(cal?.links||[]).filter(l=>l.type==='own'&&l.visible!==false);
+      if(!cal||!ownSources.length)return r74Toast('Kein eigener Kalender sichtbar. Füge zuerst einen eigenen Kalender hinzu.');
+      openModal(`Termin hinzufügen · ${escapeHtml(cal.name)}`,`<input id="mEventTitle" placeholder="Titel des Termins"><select id="mEventSource">${ownSources.map(l=>`<option value="${escapeHtml(l.id)}">${escapeHtml(l.name)}</option>`).join('')}</select><input id="mEventLocation" placeholder="Ort"><div class="field"><label>Datum</label><input id="mEventDate" type="date" value="${date}"></div><div class="field"><label>Wiederholung</label><select id="mEventRecurrence"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select></div><div class="field"><label>Ganztägig</label><select id="mEventAllDay"><option value="false">Nein</option><option value="true">Ja</option></select></div><div class="field"><label>Startzeit</label><input id="mEventStart" type="time" value="09:00"></div><div class="field"><label>Endzeit</label><input id="mEventEnd" type="time" value="10:00"></div><input id="mEventTravel" placeholder="Wegzeit, z. B. 20 Min."><textarea id="mEventDescription" rows="4" placeholder="Details / Notizen"></textarea><div class="hint">Wird sofort in own_events gespeichert. Ohne Titel wird „Termin“ verwendet.</div>`,async()=>{
+        const sourceId=$('#mEventSource')?.value;const src=ownSources.find(l=>l.id===sourceId)||ownSources[0];const d=$('#mEventDate')?.value||date;const allDay=$('#mEventAllDay')?.value==='true';const st=$('#mEventStart')?.value||'00:00';const en=$('#mEventEnd')?.value||st;
+        const event={id:crypto.randomUUID(),sourceId,summary:r74Title($('#mEventTitle')?.value,'Termin'),location:($('#mEventLocation')?.value||'').trim(),start:(allDay?new Date(d+'T00:00:00'):new Date(d+'T'+st+':00')).toISOString(),end:(allDay?new Date(d+'T23:59:00'):new Date(d+'T'+en+':00')).toISOString(),allDay,recurrence:$('#mEventRecurrence')?.value||'none',source:src?.name||cal.name,icsName:src?.name||cal.name,icsColor:src?.color||state.colors.event,travelTime:($('#mEventTravel')?.value||'').trim(),description:($('#mEventDescription')?.value||'').trim(),manual:true,status:'active'};
+        try{await r74Upsert('own_events',r74OwnEventRow(event));cal.ownEvents=cal.ownEvents||[];cal.ownEvents.push(event);render();r74Toast('Eigener Termin gespeichert.');}
+        catch(error){r74Toast('Eigener Termin konnte nicht gespeichert werden: '+(error.message||error));}
+      });
+    };
+  }
+
+  // Auch Änderungen/Checkboxen/Deletes werden nach dem Rendern kurzfristig in alle Tabellen gespiegelt.
+  const oldRender74=window.render||render;
+  window.render=render=function(){const result=oldRender74.apply(this,arguments);if(currentUser&&!suppressCloudSave)setTimeout(()=>saveRelationalSnapshot().catch(console.error),40);setTimeout(r74CleanTimeline,0);setTimeout(r74CleanTimeline,80);return result;};
+  document.addEventListener('change',ev=>{if(ev.target&&ev.target.closest('.app,.modal'))r74AfterMutation();},true);
+  document.addEventListener('click',ev=>{if(ev.target&&ev.target.closest('[data-delete-task],[data-delete-long],[data-delete-project],[data-delete-project-task],[data-toggle-task],[data-toggle-long],[data-toggle-project-task],#prevBtn,#todayBtn,#nextBtn,#timelinePrevDay52,#timelineToday52,#timelineNextDay52')){setTimeout(r74CleanTimeline,0);setTimeout(r74CleanTimeline,80);r74AfterMutation();}},true);
+
+  // Zeitstrahl vollständig aus Urlaub-/Wochenend-/Heute-Färbung herausnehmen.
+  function r74CleanTimeline(){
+    const host=document.querySelector('#sidebarDayTimelineRev049');
+    const wrap=host?.querySelector('.timeline-canvas-wrap');
+    const canvas=host?.querySelector('.timeline-canvas');
+    [host,wrap,canvas].filter(Boolean).forEach(el=>{
+      el.classList.remove('vacation-active','vacation-day-rev52','rev64-weekend-timeline','rev65-weekend-timeline','rev66-weekend-timeline','rev68-weekend-timeline','rev70-weekend-timeline','rev71-weekend-timeline','rev72-weekend-timeline','rev68-vacation-timeline','rev70-vacation-timeline','rev71-vacation-timeline');
+      el.style.background='';el.style.backgroundColor='';el.style.backgroundImage='';el.style.backgroundBlendMode='';
+      el.classList.add('rev74-timeline-neutral');
+    });
+  }
+  const oldTl74=typeof renderSidebarTimelineRev050==='function'?renderSidebarTimelineRev050:null;
+  if(oldTl74){window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){const r=oldTl74.apply(this,arguments);setTimeout(r74CleanTimeline,0);setTimeout(r74CleanTimeline,80);setTimeout(r74CleanTimeline,200);return r;};}
+  const style=document.createElement('style');
+  style.textContent=`
+    #sidebarDayTimelineRev049.rev74-timeline-neutral,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev74-timeline-neutral,
+    #sidebarDayTimelineRev049 .timeline-canvas.rev74-timeline-neutral{background:#fff!important;background-color:#fff!important;background-image:none!important;background-blend-mode:normal!important;}
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev72-weekend-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev71-weekend-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev70-weekend-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev68-weekend-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev68-vacation-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev70-vacation-timeline,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.vacation-active{background:#fff!important;background-color:#fff!important;background-image:none!important;}
+  `;
+  document.head.appendChild(style);
+  setTimeout(r74CleanTimeline,100);setTimeout(r74CleanTimeline,600);
+})();
