@@ -23,3 +23,16 @@ Ausgangsbasis: Revision 070 modular.
 ## Hinweis
 
 Die Datei ist noch nicht fachlich vollständig modularisiert. Diese Revision behebt gezielt die aktuell genannten Darstellungs- und Speicherprobleme im bestehenden modularen Stand.
+
+
+## Revision 072
+
+Änderungen:
+- Zeitstrahl wird nach Klick auf Heute, Tag vor und Tag zurück wieder neutral bereinigt.
+- Alte Urlaubs-/Wochenend-Inline-Styles am Zeitstrahl werden entfernt, damit der braune Hintergrund nicht hängen bleibt.
+- Einstellungen-Button wird nach Render-Vorgängen erneut robust gebunden.
+- Wochenendoption bleibt im Allgemein-Reiter sichtbar und getrennt von Urlaub steuerbar.
+
+Auszutauschende Dateien:
+- `js/app.js`
+- optional `README.md` und `package.json` für Versionsdokumentation

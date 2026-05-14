@@ -6195,3 +6195,68 @@ dayCard=function(date){
   document.head.appendChild(style);
   ensureRev71();setVarsRev71();setTimeout(decorateVisibleRev71,450);
 })();
+
+/* Rev 072: Zeitstrahl-Dekoration nach Navigation fixiert, Settings-Reiter robust neu gebunden */
+(function(){
+  function q(sel){return document.querySelector(sel);} 
+  function qq(sel){return Array.from(document.querySelectorAll(sel));}
+  function isWeekend72(d){const x=new Date(d);const day=x.getDay();return day===0||day===6;}
+  function cleanTimeline72(){
+    const wrap=q('#sidebarDayTimelineRev049 .timeline-canvas-wrap');
+    if(!wrap)return;
+    wrap.classList.remove('vacation-active','rev65-weekend-timeline','rev68-weekend-timeline','rev70-weekend-timeline','rev71-weekend-timeline','rev68-vacation-timeline','rev70-vacation-timeline','rev71-vacation-timeline');
+    wrap.style.background='';wrap.style.backgroundColor='';wrap.style.backgroundImage='';wrap.style.borderColor='';wrap.removeAttribute('style');
+    wrap.classList.add('rev72-timeline-clean');
+    try{
+      if(typeof state!=='undefined'&&state.weekendHighlight&&state.weekendHighlight.enabled){
+        const shown=typeof addDays==='function'?addDays(new Date(new Date().setHours(0,0,0,0)),Number(state.timelineDayOffset||0)):new Date();
+        if(isWeekend72(shown))wrap.classList.add('rev72-weekend-timeline');
+      }
+    }catch(_){}
+  }
+  function cleanVisible72(){
+    cleanTimeline72();
+    qq('.day').forEach(el=>{
+      el.classList.remove('vacation-day-rev52','vacation-active','rev64-weekend-day','rev65-weekend-day','rev66-weekend-day','rev68-weekend-day','rev70-weekend-day','rev71-weekend-day','rev66-vacation-day','rev68-vacation-day','rev70-vacation-day','rev71-vacation-day');
+      el.style.backgroundImage='';
+    });
+  }
+  const oldTimeline72=typeof renderSidebarTimelineRev050==='function'?renderSidebarTimelineRev050:null;
+  if(oldTimeline72){
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){
+      const r=oldTimeline72.apply(this,arguments);
+      setTimeout(cleanTimeline72,0);
+      setTimeout(cleanTimeline72,80);
+      return r;
+    };
+  }
+  const oldRender72=typeof render==='function'?render:null;
+  if(oldRender72){
+    window.render=render=function(){
+      const r=oldRender72.apply(this,arguments);
+      setTimeout(()=>{cleanVisible72();bindSettings72();},0);
+      setTimeout(cleanTimeline72,120);
+      return r;
+    };
+  }
+  function bindSettings72(){
+    const btn=q('#settingsBtn');
+    if(btn&&typeof openSyncSettingsModal==='function')btn.onclick=()=>openSyncSettingsModal();
+  }
+  document.addEventListener('click',ev=>{
+    const id=ev.target&&ev.target.id;
+    if(id==='timelinePrevDay52'||id==='timelineToday52'||id==='timelineNextDay52')setTimeout(cleanTimeline72,120);
+    if(id==='prevBtn'||id==='todayBtn'||id==='nextBtn')setTimeout(cleanTimeline72,220);
+  },true);
+  const style=document.createElement('style');
+  style.textContent=`
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev72-timeline-clean{background:#050a16!important;background-image:none!important;}
+    body.light #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev72-timeline-clean{background:#fff!important;background-image:none!important;}
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev72-weekend-timeline{background:linear-gradient(0deg,var(--rev71WeekendBg,rgba(255,210,154,.24)),var(--rev71WeekendBg,rgba(255,210,154,.24))),#050a16!important;}
+    body.light #sidebarDayTimelineRev049 .timeline-canvas-wrap.rev72-weekend-timeline{background:linear-gradient(0deg,var(--rev71WeekendBg,rgba(255,210,154,.24)),var(--rev71WeekendBg,rgba(255,210,154,.24))),#fff!important;}
+    .rev71-card:has(#mWeekendEnabled71){display:grid!important;}
+    .rev71-card:has(#mWeekendEnabled71),.rev71-card:has(#mVacationEnabled71){visibility:visible!important;opacity:1!important;}
+  `;
+  document.head.appendChild(style);
+  bindSettings72();setTimeout(()=>{bindSettings72();cleanTimeline72();},250);setTimeout(()=>{bindSettings72();cleanTimeline72();},1000);
+})();
