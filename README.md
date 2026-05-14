@@ -62,3 +62,23 @@ Nicht umgesetzt:
 
 Nicht umgesetzt:
 - Keine automatische Löschung fehlender Zeilen beim Snapshot. Das bleibt absichtlich deaktiviert, um Datenverlust in Supabase zu vermeiden.
+
+
+## Revision 075
+
+Änderungen:
+- Stabilitätsrevision auf Basis Revision 074, kein Cleanup-Refactoring.
+- Sofort-Speicherung nach Erstellen, Ändern, Löschen und Speichern im Modal zusätzlich abgesichert.
+- Grüner Refresh und Navigation lösen vor/nach UI-Aktionen eine persistente Speicherung aus.
+- Löschverhalten vereinheitlicht: Tages-Tasks, langfristige Tasks, Projekt-Tasks und Projekte fragen konsistent nach Bestätigung.
+- Modal-System stabilisiert: alte Save-/Delete-Zustände werden beim Öffnen/Schließen bereinigt.
+- Farbauswahl in Einstellungen wird wieder als kompakter Farbeimer/Farbbutton dargestellt statt als langer horizontaler Farbbalken.
+- Sidebar-Zeitstrahl bleibt vollständig neutral/weiß und wird nicht von Urlaub, Wochenende oder aktuellem Tag eingefärbt.
+
+Auszutauschende Dateien:
+- `js/app.js`
+- `css/styles.css`
+- optional `README.md`, `package.json`, `manifest.json`
+
+Nicht umgesetzt:
+- Keine strukturelle Verschlankung und keine Entfernung alter Funktionsblöcke, weil das bei der verworfenen vorherigen Revision zu Fehlern geführt hat.

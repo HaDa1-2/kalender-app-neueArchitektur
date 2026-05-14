@@ -5,11 +5,11 @@
   },
   {
     "path": "README.md",
-    "bytes": 1692
+    "bytes": 4596
   },
   {
     "path": "api/README.md",
-    "bytes": 169
+    "bytes": 137
   },
   {
     "path": "assets/architektur-kalender-app.png",
@@ -17,7 +17,7 @@
   },
   {
     "path": "css/styles.css",
-    "bytes": 83353
+    "bytes": 85066
   },
   {
     "path": "index.html",
@@ -25,11 +25,15 @@
   },
   {
     "path": "js/app.js",
-    "bytes": 503134
+    "bytes": 609576
+  },
+  {
+    "path": "manifest.json",
+    "bytes": 516
   },
   {
     "path": "package.json",
-    "bytes": 233
+    "bytes": 266
   },
   {
     "path": "vercel.json",

@@ -6610,3 +6610,228 @@ dayCard=function(date){
   document.head.appendChild(style);
   setTimeout(r74CleanTimeline,100);setTimeout(r74CleanTimeline,600);
 })();
+
+/* Rev075 stability patch: immediate persistence, unified deletion, modal cleanup, neutral timeline, settings color buckets */
+(function(){
+  const $r75=(s,root=document)=>root.querySelector(s);
+  const $$r75=(s,root=document)=>Array.from(root.querySelectorAll(s));
+  const R75_DELETE_SELECTORS='[data-delete-task],[data-delete-long],[data-delete-project-task],[data-delete-project]';
+  let r75SaveTimer=null;
+  let r75SaveRunning=false;
+  let r75SaveQueued=false;
+
+  function r75Toast(msg){try{typeof toast==='function'?toast(msg):console.warn(msg);}catch(_){console.warn(msg);}}
+  function r75CurrentUser(){try{return typeof currentUser!=='undefined'&&currentUser?currentUser:null;}catch(_){return null;}}
+  async function r75FlushPersistence(reason='change'){
+    const user=r75CurrentUser();
+    if(!user)return;
+    if(r75SaveRunning){r75SaveQueued=true;return;}
+    r75SaveRunning=true;
+    try{
+      if(typeof saveRelationalSnapshot==='function')await saveRelationalSnapshot();
+      if(typeof saveStateToCloud==='function')await saveStateToCloud();
+      if(typeof persist==='function')persist();
+      const diag=$r75('#diagBox');
+      if(diag)diag.textContent='Gespeichert: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' · '+reason;
+    }catch(error){
+      console.error('Rev075 Sofort-Speicherung fehlgeschlagen:',error);
+      r75Toast('Speichern fehlgeschlagen: '+(error?.message||error));
+    }finally{
+      r75SaveRunning=false;
+      if(r75SaveQueued){r75SaveQueued=false;r75SchedulePersistence('Nachlauf');}
+    }
+  }
+  function r75SchedulePersistence(reason='Änderung'){
+    clearTimeout(r75SaveTimer);
+    r75SaveTimer=setTimeout(()=>r75FlushPersistence(reason),120);
+  }
+  window.r75FlushPersistence=r75FlushPersistence;
+
+  async function r75DeleteFromTable(table,id){
+    const user=r75CurrentUser();
+    if(!user||!id||typeof supabaseClient==='undefined')return;
+    try{await supabaseClient.from(table).delete().eq('user_id',user.id).eq('id',id);}catch(error){console.warn('Delete fehlgeschlagen',table,id,error);}
+  }
+  function r75LabelForDelete(btn){
+    if(btn.matches('[data-delete-long]'))return 'Langfristigen Task wirklich löschen?';
+    if(btn.matches('[data-delete-project-task]'))return 'Projekt-Task wirklich löschen?';
+    if(btn.matches('[data-delete-project]'))return 'Projekt wirklich löschen? Zugehörige Projekt-Tasks können davon betroffen sein.';
+    return 'Task wirklich löschen?';
+  }
+  function r75BindUnifiedDeletes(scope=document){
+    $$r75(R75_DELETE_SELECTORS,scope).forEach(btn=>{
+      if(btn.dataset.r75UnifiedDelete==='1')return;
+      btn.dataset.r75UnifiedDelete='1';
+      const oldTitle=btn.title||'';
+      btn.title=oldTitle||'Löschen';
+      btn.onclick=async function(ev){
+        ev.preventDefault();ev.stopPropagation();if(ev.stopImmediatePropagation)ev.stopImmediatePropagation();
+        if(typeof requireLogin==='function'&&!requireLogin())return false;
+        if(!confirm(r75LabelForDelete(btn)))return false;
+        try{
+          if(btn.dataset.deleteTask){
+            const id=btn.dataset.deleteTask;
+            if(Array.isArray(state.tasks))state.tasks=state.tasks.filter(x=>String(x.id)!==String(id));
+            await r75DeleteFromTable('tasks',id);
+          }else if(btn.dataset.deleteLong){
+            const id=btn.dataset.deleteLong;
+            if(Array.isArray(state.longterm))state.longterm=state.longterm.filter(x=>String(x.id)!==String(id));
+            await r75DeleteFromTable('long_tasks',id);
+          }else if(btn.dataset.deleteProjectTask){
+            const id=btn.dataset.deleteProjectTask;
+            if(Array.isArray(state.projectTasks))state.projectTasks=state.projectTasks.filter(x=>String(x.id)!==String(id));
+            if(typeof deleteProjectTaskRev047==='function')await deleteProjectTaskRev047(id);else await r75DeleteFromTable('project_tasks',id);
+          }else if(btn.dataset.deleteProject){
+            const id=btn.dataset.deleteProject;
+            if(Array.isArray(state.projects))state.projects=state.projects.filter(x=>String(x.id)!==String(id));
+            if(Array.isArray(state.projectTasks))state.projectTasks=state.projectTasks.filter(x=>String(x.projectId)!==String(id)&&String(x.project_id)!==String(id));
+            await r75DeleteFromTable('project_tasks',id);
+            await r75DeleteFromTable('projects',id);
+          }
+          if(typeof render==='function')render();
+          await r75FlushPersistence('Löschung');
+          r75Toast('Gelöscht und gespeichert.');
+        }catch(error){
+          console.error(error);
+          r75Toast('Löschen fehlgeschlagen: '+(error?.message||error));
+        }
+        return false;
+      };
+    });
+  }
+
+  function r75ResetModalBeforeOpen(){
+    const save=$r75('#saveModal');
+    const content=$r75('#modalContent');
+    if(save){save.style.display='';save.onclick=null;delete save.dataset.r75Wrapped;}
+    if(content){content.onkeydown=null;}
+    $$r75('.r75-transient-delete,.mode-delete-action,#deleteModeBtnAction').forEach(x=>x.remove());
+  }
+  if(typeof openModal==='function'){
+    const oldOpenModal75=openModal;
+    window.openModal=openModal=function(){
+      r75ResetModalBeforeOpen();
+      const result=oldOpenModal75.apply(this,arguments);
+      setTimeout(r75AfterUiUpdate,0);
+      setTimeout(r75WrapSaveButton,0);
+      return result;
+    };
+  }
+  if(typeof closeModal==='function'){
+    const oldCloseModal75=closeModal;
+    window.closeModal=closeModal=function(){
+      const result=oldCloseModal75.apply(this,arguments);
+      const save=$r75('#saveModal');
+      const content=$r75('#modalContent');
+      if(save){save.onclick=null;delete save.dataset.r75Wrapped;save.style.display='';}
+      if(content){content.onkeydown=null;}
+      return result;
+    };
+  }
+
+  function r75WrapSaveButton(){
+    const save=$r75('#saveModal');
+    if(!save||save.dataset.r75Wrapped==='1')return;
+    const original=save.onclick;
+    if(typeof original!=='function')return;
+    save.dataset.r75Wrapped='1';
+    save.onclick=function(ev){
+      const r=original.call(this,ev);
+      Promise.resolve(r).finally(()=>{setTimeout(()=>r75FlushPersistence('Speichern'),80);setTimeout(r75AfterUiUpdate,40);});
+      return r;
+    };
+  }
+
+  function r75NeutralizeTimeline(){
+    const selectors=['#sidebarDayTimelineRev049','#sidebarDayTimelineRev049 .timeline-canvas-wrap','#sidebarDayTimelineRev049 .timeline-canvas','.sidebar-day-timeline','.timeline-canvas-wrap','.timeline-canvas'];
+    selectors.forEach(sel=>$$r75(sel).forEach(el=>{
+      el.classList.remove('vacation-active','vacation-day-rev52','rev64-weekend-timeline','rev65-weekend-timeline','rev66-weekend-timeline','rev68-weekend-timeline','rev70-weekend-timeline','rev71-weekend-timeline','rev72-weekend-timeline','rev68-vacation-timeline','rev70-vacation-timeline','rev71-vacation-timeline','rev72-vacation-timeline');
+      el.classList.add('r75-timeline-neutral');
+      el.style.background='#fff';
+      el.style.backgroundColor='#fff';
+      el.style.backgroundImage='none';
+      el.style.backgroundBlendMode='normal';
+    }));
+  }
+  function r75DecorateColorInputs(){
+    const ids=['mOutlineColor71','mWeekendColor71','mVacationColor71','mTodayBorderColor71','mProjectColor74','mTaskColColor73','mLongColColor73','mIcsColor71'];
+    ids.forEach(id=>{
+      const input=$r75('#'+id);
+      if(!input||input.dataset.r75Bucket==='1')return;
+      input.dataset.r75Bucket='1';
+      input.classList.add('r75-color-bucket-input');
+      const wrap=document.createElement('span');
+      wrap.className='r75-color-bucket-wrap';
+      wrap.title='Farbe auswählen';
+      const icon=document.createElement('span');
+      icon.className='r75-color-bucket-icon';
+      icon.textContent='🎨';
+      input.parentNode.insertBefore(wrap,input);
+      wrap.appendChild(icon);
+      wrap.appendChild(input);
+    });
+  }
+  function r75AfterUiUpdate(){
+    r75NeutralizeTimeline();
+    r75BindUnifiedDeletes(document);
+    r75DecorateColorInputs();
+    r75WrapSaveButton();
+  }
+
+  // Make refresh safe: save first, then let existing refresh/load logic run.
+  function r75PatchRefresh(){
+    ['#reloadDbBtn','#prevBtn','#todayBtn','#nextBtn','#timelinePrevDay52','#timelineToday52','#timelineNextDay52'].forEach(sel=>{
+      const btn=$r75(sel);
+      if(!btn||btn.dataset.r75Patched==='1')return;
+      btn.dataset.r75Patched='1';
+      btn.addEventListener('click',()=>{r75NeutralizeTimeline();r75SchedulePersistence(sel==='\#reloadDbBtn'?'Refresh':'Navigation');setTimeout(r75NeutralizeTimeline,30);setTimeout(r75NeutralizeTimeline,160);},true);
+    });
+  }
+
+  if(typeof render==='function'){
+    const oldRender75=render;
+    window.render=render=function(){
+      const result=oldRender75.apply(this,arguments);
+      setTimeout(r75AfterUiUpdate,0);
+      setTimeout(r75AfterUiUpdate,80);
+      setTimeout(()=>r75SchedulePersistence('Render-Änderung'),180);
+      return result;
+    };
+  }
+  if(typeof renderSidebarTimelineRev050==='function'){
+    const oldTl75=renderSidebarTimelineRev050;
+    window.renderSidebarTimelineRev050=renderSidebarTimelineRev050=function(){
+      const result=oldTl75.apply(this,arguments);
+      setTimeout(r75NeutralizeTimeline,0);setTimeout(r75NeutralizeTimeline,80);setTimeout(r75NeutralizeTimeline,240);
+      return result;
+    };
+  }
+
+  document.addEventListener('input',ev=>{if(ev.target&&ev.target.closest('.modal,.app')){r75SchedulePersistence('Eingabe');r75DecorateColorInputs();}},true);
+  document.addEventListener('change',ev=>{if(ev.target&&ev.target.closest('.modal,.app')){r75SchedulePersistence('Änderung');setTimeout(r75AfterUiUpdate,0);}},true);
+  document.addEventListener('click',ev=>{if(ev.target&&ev.target.closest('.modal,.app')){setTimeout(r75AfterUiUpdate,0);}},true);
+
+  const observer=new MutationObserver(()=>{r75AfterUiUpdate();});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+
+  const style=document.createElement('style');
+  style.textContent=`
+    .r75-timeline-neutral,
+    #sidebarDayTimelineRev049,
+    #sidebarDayTimelineRev049 .timeline-canvas-wrap,
+    #sidebarDayTimelineRev049 .timeline-canvas,
+    .sidebar-day-timeline .timeline-canvas-wrap,
+    .sidebar-day-timeline .timeline-canvas{
+      background:#fff!important;background-color:#fff!important;background-image:none!important;background-blend-mode:normal!important;
+    }
+    .r75-color-bucket-wrap{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:44px!important;height:42px!important;border:1px solid #cbd5e1!important;border-radius:12px!important;background:#f8fafc!important;box-shadow:0 2px 8px rgba(15,23,42,.08)!important;position:relative!important;overflow:hidden!important;vertical-align:middle!important;}
+    .r75-color-bucket-icon{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;font-size:18px!important;pointer-events:none!important;z-index:2!important;text-shadow:0 1px 2px rgba(255,255,255,.85)!important;}
+    .r75-color-bucket-input{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;opacity:.78!important;border:0!important;padding:0!important;cursor:pointer!important;background:transparent!important;}
+    .rev71-row:has(.r75-color-bucket-wrap){grid-template-columns:minmax(155px,230px) auto!important;justify-content:start!important;}
+    body.sharp-corners .r75-color-bucket-wrap{border-radius:0!important;}
+  `;
+  document.head.appendChild(style);
+
+  setTimeout(()=>{r75PatchRefresh();r75AfterUiUpdate();},0);
+  setTimeout(()=>{r75PatchRefresh();r75AfterUiUpdate();},600);
+})();
