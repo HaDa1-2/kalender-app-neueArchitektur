@@ -95,3 +95,16 @@ Nicht umgesetzt:
 
 Nicht umgesetzt:
 - Keine vollständige Neugestaltung der Monatsübersicht; dafür sollte separat ein eigenes Layout-Konzept beschlossen werden.
+
+
+## Revision 077
+
+Änderungen:
+- Monatsübersicht deutlich vergrößert und desktopfreundlicher dargestellt.
+- Ganztägige Termine werden oben in den Tageszellen platziert und können nebeneinander stehen.
+- Zeitgebundene Termine werden darunter chronologisch angezeigt.
+- Tagestasks werden in der Monatsansicht nur noch als farbige Gruppenmarker angezeigt, nicht mehr als einzelne Aufgabenliste.
+- Monatszellen sind lesbarer, höher und besser strukturiert.
+
+Nicht umgesetzt:
+- Keine Änderung an Speicherlogik oder Datenbankstruktur in dieser Revision.

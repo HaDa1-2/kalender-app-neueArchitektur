@@ -7032,3 +7032,107 @@ dayCard=function(date){
   document.head.appendChild(style);
   setVars();bindSettings();setTimeout(()=>{bindSettings();syncColorControls(document);decorateVisibleDays();},0);setTimeout(()=>{bindSettings();decorateVisibleDays();},600);
 })();
+
+
+/* Revision 077: Monatsübersicht Desktop-Layout und klare Monatslogik */
+(function(){
+  const q=s=>document.querySelector(s);
+  const qa=s=>Array.from(document.querySelectorAll(s));
+  function esc(v){
+    try{ return typeof escapeHtml==='function'?escapeHtml(v):String(v??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[m])); }
+    catch(_){ return String(v??''); }
+  }
+  function isoDate(d){ return typeof fmtDate==='function'?fmtDate(d):new Date(d).toISOString().slice(0,10); }
+  function short(v,n){ return typeof shortText==='function'?shortText(v,n):String(v??'').slice(0,n); }
+  function same(a,b){ return typeof sameDay==='function'?sameDay(a,b):isoDate(a)===isoDate(b); }
+  function add(d,n){ return typeof addDays==='function'?addDays(d,n):new Date(new Date(d).getTime()+n*86400000); }
+  function sourceVisible(cal,event){
+    const links=cal?.links||[];
+    const id=event?.icsId||event?.sourceId;
+    if(!id)return true;
+    const src=links.find(x=>x.id===id);
+    return !src || src.visible!==false;
+  }
+  function eventsForMonthDay(date){
+    const out=[];
+    const calendars=(typeof visibleCalendars==='function'?visibleCalendars():(state.calendars||[]).map((cal,idx)=>({cal,idx}))).filter(x=>x.cal?.visible!==false);
+    calendars.forEach(({cal,idx})=>{
+      const ics=(cal.events||[]).forEach((event,eventIdx)=>{
+        const occ=typeof eventOccurrenceForDate==='function'?eventOccurrenceForDate(event,date):null;
+        if(!occ||!sourceVisible(cal,occ))return;
+        out.push({
+          type:'ics',calIdx:idx,eventIdx,summary:occ.summary||'Ohne Titel',
+          color:occ.icsColor||state.colors?.event||'#7c5cff',status:occ.status||'',
+          allDay:!!occ.allDay,start:occ.start||'',end:occ.end||'',source:occ.icsName||occ.source||cal.name||''
+        });
+      });
+      (cal.ownEvents||[]).forEach((event,eventIdx)=>{
+        const occ=typeof eventOccurrenceForDate==='function'?eventOccurrenceForDate(event,date):null;
+        if(!occ||!sourceVisible(cal,occ))return;
+        out.push({
+          type:'own',calIdx:idx,eventIdx,summary:occ.summary||'Ohne Titel',
+          color:occ.icsColor||state.colors?.event||'#7c5cff',status:occ.status||'',
+          allDay:!!occ.allDay,start:occ.start||'',end:occ.end||'',source:occ.icsName||occ.source||cal.name||''
+        });
+      });
+    });
+    return out.sort((a,b)=>Number(!a.allDay)-Number(!b.allDay)||new Date(a.start||0)-new Date(b.start||0)||String(a.summary).localeCompare(String(b.summary),'de'));
+  }
+  function timeText(event){
+    if(event.allDay)return 'Ganztägig';
+    const s=new Date(event.start), e=event.end?new Date(event.end):null;
+    const f=d=>isNaN(d)?'':d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    const start=f(s), end=e?f(e):'';
+    return start+(end?'–'+end:'');
+  }
+  function taskMarkersForDay(iso){
+    const groups=state.taskColumns||[];
+    const tasks=(state.tasks||[]).filter(t=>t.date===iso&&!t.done);
+    return groups.map(g=>({group:g,count:tasks.filter(t=>(t.columnId||groups[0]?.id)===g.id).length})).filter(x=>x.count>0&&x.group?.visible!==false);
+  }
+  function renderMonthView077(){
+    const root=q('#monthView');if(!root)return;
+    const modal=root.closest('.modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev077');
+    const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+    const first=new Date(monthCursor);first.setHours(0,0,0,0);
+    const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
+    const days=['Mo','Di','Mi','Do','Fr','Sa','So'];
+    const today=new Date();today.setHours(0,0,0,0);
+    let html=`<div class="month-nav month-nav-rev077"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${esc(monthName)}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid month-grid-rev077">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
+    for(let i=0;i<42;i++){
+      const d=add(start,i);const iso=isoDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
+      const events=eventsForMonthDay(d);const allDay=events.filter(e=>e.allDay);const timed=events.filter(e=>!e.allDay);
+      const markers=taskMarkersForDay(iso);
+      const kw=(d.getDay()===1&&typeof getISOWeek==='function')?`<span class="kw-label">KW${getISOWeek(d)}</span>`:'';
+      const eventHtml=`<div class="month-all-day-row">${allDay.slice(0,3).map(e=>`<div class="month-pill month-pill-all-day" style="--ev:${esc(e.color)}" title="${esc(e.summary)}"><span>${esc(short(e.summary,22))}</span></div>`).join('')}${allDay.length>3?`<div class="month-more">+${allDay.length-3}</div>`:''}</div><div class="month-timed-list">${timed.slice(0,4).map(e=>`<div class="month-timed-event" style="--ev:${esc(e.color)}" title="${esc(timeText(e)+' · '+e.summary)}"><span class="month-event-time">${esc(timeText(e))}</span><span class="month-event-text">${esc(short(e.summary,26))}</span></div>`).join('')}${timed.length>4?`<div class="month-more">+${timed.length-4} weitere Termine</div>`:''}</div>`;
+      const markerHtml=markers.length?`<div class="month-task-markers" title="Tagestasks vorhanden">${markers.slice(0,6).map(m=>`<span class="month-task-marker" style="background:${esc(m.group.color||state.colors?.task||'#ffb020')}" title="${esc(m.group.name)}: ${m.count}"></span>`).join('')}${markers.length>6?`<span class="month-task-marker-more">+${markers.length-6}</span>`:''}</div>`:'';
+      html+=`<div class="month-cell month-cell-rev077 ${inMonth?'':'out'} ${same(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day month-day-rev077"><span class="month-date-num">${d.getDate()}</span>${kw}</div>${eventHtml}${markerHtml}</div>`;
+    }
+    html+='</div>';root.innerHTML=html;
+    const prev=q('#mPrev'), next=q('#mNext');
+    if(prev)prev.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView077();};
+    if(next)next.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView077();};
+    qa('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);if(typeof closeModal==='function')closeModal();if(typeof render==='function')render();});
+    if(typeof decorateVisibleDays==='function')setTimeout(decorateVisibleDays,0);
+  }
+  window.renderMonthView=renderMonthView=renderMonthView077;
+  const openMonth077=function(){
+    monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);
+    q('#modalTitle').textContent='Monatsübersicht';
+    q('#modalContent').innerHTML='<div id="monthView" class="month-view-rev077"></div>';
+    q('#modalBackdrop').style.display='flex';
+    q('#saveModal').style.display='none';
+    const modal=q('#modalBackdrop .modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev077');
+    renderMonthView077();
+  };
+  window.openMonthModal=openMonthModal=openMonth077;
+  const btn=q('#monthBtn');if(btn)btn.onclick=openMonth077;
+  const oldClose=window.closeModal||closeModal;
+  if(typeof oldClose==='function'){
+    window.closeModal=closeModal=function(){const r=oldClose.apply(this,arguments);const modal=q('#modalBackdrop .modal');if(modal)modal.classList.remove('month-modal-wide','month-modal-rev077');return r;};
+  }
+  const style=document.createElement('style');
+  style.textContent=`
+    .month-modal-wide{width:min(1500px,96vw)!important;max-height:94vh!important}.month-modal-rev077 #modalContent,.month-view-rev077{width:100%!important}.month-grid-rev077{display:grid!important;grid-template-columns:repeat(7,minmax(145px,1fr))!important;gap:10px!important}.month-grid-rev077 .month-head{font-size:13px!important;font-weight:900!important;text-align:center!important;color:#73829a!important;padding:0 0 4px!important}.month-cell-rev077{min-height:150px!important;height:auto!important;background:#f8fbff!important;border:1px solid #1f2937!important;border-radius:0!important;padding:8px!important;display:flex!important;flex-direction:column!important;gap:5px!important;overflow:hidden!important;cursor:pointer!important}.month-cell-rev077.out{opacity:.42!important;background:#f3f4f6!important}.month-cell-rev077.today{border:3px solid var(--r76TodayBorder,#0284c7)!important;box-shadow:none!important}.month-day-rev077{display:flex!important;align-items:center!important;gap:6px!important;margin-bottom:2px!important;color:#64748b!important;font-weight:900!important}.month-date-num{font-size:17px!important;color:#334155!important}.month-all-day-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:4px!important;min-height:0!important}.month-pill{border-left:4px solid var(--ev)!important;background:color-mix(in srgb,var(--ev) 18%,#fff)!important;color:#0f172a!important;font-size:11px!important;font-weight:900!important;line-height:1.15!important;padding:4px 5px!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}.month-pill-all-day::before{content:'Ganzt.';font-size:9px;font-weight:800;color:#475569;margin-right:4px}.month-timed-list{display:grid!important;gap:4px!important;margin-top:2px!important}.month-timed-event{display:grid!important;grid-template-columns:36px minmax(0,1fr)!important;gap:5px!important;align-items:center!important;border-left:4px solid var(--ev)!important;background:#fff!important;border-top:1px solid #e2e8f0!important;border-right:1px solid #e2e8f0!important;border-bottom:1px solid #e2e8f0!important;padding:4px 5px!important;min-width:0!important}.month-event-time{font-size:9px!important;color:#64748b!important;font-weight:900!important;white-space:nowrap!important}.month-event-text{font-size:11px!important;color:#0f172a!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.month-task-markers{margin-top:auto!important;display:flex!important;align-items:center!important;gap:4px!important;min-height:12px!important;padding-top:3px!important}.month-task-marker{height:8px!important;min-width:22px!important;flex:1 1 22px!important;border-radius:999px!important;display:block!important}.month-task-marker-more,.month-more{font-size:10px!important;color:#64748b!important;font-weight:900!important;white-space:nowrap!important}.month-nav-rev077{margin-bottom:14px!important}.month-title{font-size:22px!important}@media(max-width:900px){.month-modal-wide{width:98vw!important}.month-grid-rev077{grid-template-columns:repeat(7,minmax(120px,1fr))!important;overflow-x:auto!important}.month-cell-rev077{min-height:135px!important}.month-all-day-row{grid-template-columns:1fr!important}}`;
+  document.head.appendChild(style);
+})();

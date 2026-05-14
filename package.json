@@ -1,6 +1,6 @@
 {
-  "name": "kalender-app-rev076-stability",
-  "version": "0.76.0",
+  "name": "kalender-app-rev077-modular",
+  "version": "0.77.0",
   "private": true,
   "description": "Revision 076: stabile Speicherlogik, einheitliche Löschbestätigung, Settings-Farbauswahl, neutraler Zeitstrahl",
   "scripts": {
