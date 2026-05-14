@@ -1306,3 +1306,177 @@ body.sharp-corners .own-delete-square56{border-radius:0!important}
   justify-content:start!important;
 }
 body.sharp-corners .r75-color-bucket-wrap{border-radius:0!important;}
+
+/* Rev078: Monatsansicht sauber über CSS gestaltet; JS liefert nur Struktur und Daten */
+.month-modal-wide{
+  width:min(1720px,98vw)!important;
+  max-height:96vh!important;
+}
+.month-modal-rev078 #modalContent,
+.month-view-rev078{
+  width:100%!important;
+}
+.month-grid-rev078{
+  display:grid!important;
+  grid-template-columns:repeat(7,minmax(170px,1fr))!important;
+  gap:12px!important;
+  align-items:stretch!important;
+}
+.month-grid-rev078 .month-head{
+  font-size:14px!important;
+  font-weight:1000!important;
+  text-align:center!important;
+  color:#73829a!important;
+  padding:0 0 5px!important;
+  letter-spacing:.04em!important;
+}
+.month-cell-rev078{
+  min-height:172px!important;
+  height:auto!important;
+  background:#f8fbff!important;
+  border:1px solid #1f2937!important;
+  border-radius:0!important;
+  padding:9px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  gap:6px!important;
+  overflow:hidden!important;
+  cursor:pointer!important;
+}
+.month-cell-rev078.current-week{
+  min-height:218px!important;
+}
+.month-cell-rev078.out{
+  opacity:.45!important;
+  background:#f3f4f6!important;
+}
+.month-cell-rev078.today{
+  border:3px solid var(--r76TodayBorder,#0284c7)!important;
+  box-shadow:none!important;
+}
+.month-day-rev078{
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  margin-bottom:2px!important;
+  color:#64748b!important;
+  font-weight:1000!important;
+  min-height:20px!important;
+}
+.month-date-num{
+  font-size:19px!important;
+  color:#334155!important;
+  line-height:1!important;
+}
+.month-day-rev078 .kw-label{
+  font-size:12px!important;
+  font-weight:1000!important;
+  color:#64748b!important;
+}
+.month-all-day-row{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:5px!important;
+  min-height:0!important;
+}
+.month-pill{
+  border-left:4px solid var(--ev)!important;
+  background:color-mix(in srgb,var(--ev) 18%,#fff)!important;
+  color:#0f172a!important;
+  font-size:12px!important;
+  font-weight:950!important;
+  line-height:1.18!important;
+  padding:5px 6px!important;
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+.month-pill-all-day::before{
+  content:'Ganzt.';
+  font-size:9px!important;
+  font-weight:900!important;
+  color:#475569!important;
+  margin-right:5px!important;
+}
+.month-timed-list{
+  display:grid!important;
+  gap:5px!important;
+  margin-top:2px!important;
+}
+.month-timed-event{
+  display:grid!important;
+  grid-template-columns:58px minmax(0,1fr)!important;
+  gap:7px!important;
+  align-items:start!important;
+  border-left:4px solid var(--ev)!important;
+  background:#fff!important;
+  border-top:1px solid #e2e8f0!important;
+  border-right:1px solid #e2e8f0!important;
+  border-bottom:1px solid #e2e8f0!important;
+  padding:5px 6px!important;
+  min-width:0!important;
+  min-height:34px!important;
+}
+.month-event-time{
+  font-size:10px!important;
+  line-height:1.15!important;
+  color:#64748b!important;
+  font-weight:1000!important;
+  white-space:normal!important;
+  overflow:hidden!important;
+  overflow-wrap:anywhere!important;
+}
+.month-event-text{
+  font-size:12px!important;
+  line-height:1.2!important;
+  color:#0f172a!important;
+  font-weight:850!important;
+  white-space:normal!important;
+  display:-webkit-box!important;
+  -webkit-line-clamp:2!important;
+  -webkit-box-orient:vertical!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.month-task-markers{
+  margin-top:auto!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:5px!important;
+  min-height:14px!important;
+  padding-top:4px!important;
+}
+.month-task-marker{
+  height:9px!important;
+  min-width:26px!important;
+  flex:1 1 26px!important;
+  border-radius:999px!important;
+  display:block!important;
+}
+.month-task-marker-more,
+.month-more{
+  font-size:11px!important;
+  color:#64748b!important;
+  font-weight:1000!important;
+  white-space:nowrap!important;
+}
+.month-nav-rev078{
+  margin-bottom:16px!important;
+}
+.month-title{
+  font-size:24px!important;
+}
+@media(max-width:1100px){
+  .month-modal-wide{width:98vw!important;}
+  .month-grid-rev078{
+    grid-template-columns:repeat(7,minmax(145px,1fr))!important;
+    overflow-x:auto!important;
+  }
+  .month-cell-rev078{min-height:158px!important;}
+  .month-cell-rev078.current-week{min-height:196px!important;}
+}
+@media(max-width:760px){
+  .month-all-day-row{grid-template-columns:1fr!important;}
+  .month-timed-event{grid-template-columns:50px minmax(0,1fr)!important;}
+}

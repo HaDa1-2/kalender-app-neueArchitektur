@@ -3566,36 +3566,6 @@ dayCard=function(date){
     }
   }
 
-  const style=document.createElement('style');
-  style.textContent=`
-    /* Projekt-Task-Karte wieder normal; nur Projekt-/Taskgruppen-Lanes nutzen globale Kontur */
-    .project-task-item{border-color:#23324d!important;background:#060b16!important;cursor:pointer!important;}
-    body.light .project-task-item{border-color:#cbd6e7!important;background:#f8fbff!important;}
-    .project-task-item:hover b,.task-clickable56:hover b,.task-clickable56:hover .completed-title{text-decoration:underline!important;}
-    .project-task-item,.task-clickable56,.completed-table-card-rev54{cursor:pointer!important;}
-    .project-day-lane,.task-column-lane,.lane,.long-group{border-color:var(--frameBorderColor53)!important;}
-
-    /* Settings sauberer */
-    .settings-tab-rev56{color:#111827!important;background:#f8fafc!important;border:1px solid #cbd5e1!important;}
-    .settings-tab-rev56.active{background:#d1d5db!important;color:#111827!important;font-weight:1000!important;}
-    .rev57-vacation-card,.rev57-today-card,.rev57-outline-card{border:1px solid #cbd5e1;border-radius:14px;padding:12px;background:#f8fafc;display:grid;gap:10px;}
-    .rev57-card-title{font-weight:1000;color:#111827;display:flex;align-items:center;gap:8px;}
-    .rev57-card-title small{font-weight:600;color:#475569;line-height:1.35;display:block;margin-top:3px;}
-    .rev57-row{display:grid;grid-template-columns:minmax(145px,210px) minmax(0,1fr);gap:10px;align-items:center;}
-    .rev57-row label{font-weight:800;color:#111827;font-size:13px;}
-    .rev57-row input,.rev57-row select{min-width:0;}
-    .rev57-color-button{height:40px!important;min-width:46px!important;border-radius:12px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;}
-    .rev57-color-dot{width:18px;height:18px;border-radius:6px;border:1px solid rgba(0,0,0,.25);display:inline-block;}
-    .rev57-color-palette{display:none;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:8px;margin-top:8px;}
-    .rev57-color-palette.open{display:grid;}
-    .rev57-color-palette input[type="color"]{height:34px;padding:2px;border-radius:9px;}
-    .rev57-trash-left{margin-right:auto!important;width:42px!important;min-width:42px!important;height:42px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;}
-    .rev57-trash-left svg{width:21px;height:21px;}
-    #modalContent .own-delete-square56{display:none!important;}
-    .settings-layout-rev56 .own-delete-square56{display:none!important;}
-    @media(max-width:700px){.rev57-row{grid-template-columns:1fr;gap:5px;}}
-  `;
-  document.head.appendChild(style);
 
   function palette57(id,current,onPick){
     const colors=['#64748b','#000000','#ffffff','#0284c7','#7c5cff','#22c55e','#ffb020','#f97316','#ff5050','#ec4899','#14b8a6','#a855f7'];
@@ -7090,49 +7060,54 @@ dayCard=function(date){
     const tasks=(state.tasks||[]).filter(t=>t.date===iso&&!t.done);
     return groups.map(g=>({group:g,count:tasks.filter(t=>(t.columnId||groups[0]?.id)===g.id).length})).filter(x=>x.count>0&&x.group?.visible!==false);
   }
-  function renderMonthView077(){
+  function inCurrentCalendarWeek(d,today){
+    const a=new Date(d);a.setHours(0,0,0,0);
+    const t=new Date(today);t.setHours(0,0,0,0);
+    const weekStart=new Date(t);weekStart.setDate(t.getDate()-((t.getDay()+6)%7));
+    const weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+6);
+    return a>=weekStart&&a<=weekEnd;
+  }
+  function renderMonthView078(){
     const root=q('#monthView');if(!root)return;
-    const modal=root.closest('.modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev077');
+    const modal=root.closest('.modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev078');
     const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
     const first=new Date(monthCursor);first.setHours(0,0,0,0);
     const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
     const days=['Mo','Di','Mi','Do','Fr','Sa','So'];
     const today=new Date();today.setHours(0,0,0,0);
-    let html=`<div class="month-nav month-nav-rev077"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${esc(monthName)}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid month-grid-rev077">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
+    let html=`<div class="month-nav month-nav-rev078"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${esc(monthName)}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid month-grid-rev078">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
     for(let i=0;i<42;i++){
       const d=add(start,i);const iso=isoDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
       const events=eventsForMonthDay(d);const allDay=events.filter(e=>e.allDay);const timed=events.filter(e=>!e.allDay);
       const markers=taskMarkersForDay(iso);
       const kw=(d.getDay()===1&&typeof getISOWeek==='function')?`<span class="kw-label">KW${getISOWeek(d)}</span>`:'';
-      const eventHtml=`<div class="month-all-day-row">${allDay.slice(0,3).map(e=>`<div class="month-pill month-pill-all-day" style="--ev:${esc(e.color)}" title="${esc(e.summary)}"><span>${esc(short(e.summary,22))}</span></div>`).join('')}${allDay.length>3?`<div class="month-more">+${allDay.length-3}</div>`:''}</div><div class="month-timed-list">${timed.slice(0,4).map(e=>`<div class="month-timed-event" style="--ev:${esc(e.color)}" title="${esc(timeText(e)+' · '+e.summary)}"><span class="month-event-time">${esc(timeText(e))}</span><span class="month-event-text">${esc(short(e.summary,26))}</span></div>`).join('')}${timed.length>4?`<div class="month-more">+${timed.length-4} weitere Termine</div>`:''}</div>`;
+      const currentWeek=inCurrentCalendarWeek(d,today);
+      const allDayHtml=`<div class="month-all-day-row">${allDay.slice(0,4).map(e=>`<div class="month-pill month-pill-all-day" style="--ev:${esc(e.color)}" title="${esc(e.summary)}"><span>${esc(short(e.summary,34))}</span></div>`).join('')}${allDay.length>4?`<div class="month-more month-more-all-day">+${allDay.length-4}</div>`:''}</div>`;
+      const timedHtml=`<div class="month-timed-list">${timed.slice(0,currentWeek?5:4).map(e=>`<div class="month-timed-event" style="--ev:${esc(e.color)}" title="${esc(timeText(e)+' · '+e.summary)}"><span class="month-event-time">${esc(timeText(e))}</span><span class="month-event-text">${esc(short(e.summary,48))}</span></div>`).join('')}${timed.length>(currentWeek?5:4)?`<div class="month-more">+${timed.length-(currentWeek?5:4)} weitere Termine</div>`:''}</div>`;
       const markerHtml=markers.length?`<div class="month-task-markers" title="Tagestasks vorhanden">${markers.slice(0,6).map(m=>`<span class="month-task-marker" style="background:${esc(m.group.color||state.colors?.task||'#ffb020')}" title="${esc(m.group.name)}: ${m.count}"></span>`).join('')}${markers.length>6?`<span class="month-task-marker-more">+${markers.length-6}</span>`:''}</div>`:'';
-      html+=`<div class="month-cell month-cell-rev077 ${inMonth?'':'out'} ${same(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day month-day-rev077"><span class="month-date-num">${d.getDate()}</span>${kw}</div>${eventHtml}${markerHtml}</div>`;
+      html+=`<div class="month-cell month-cell-rev078 ${inMonth?'':'out'} ${same(d,today)?'today':''} ${currentWeek?'current-week':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day month-day-rev078"><span class="month-date-num">${d.getDate()}</span>${kw}</div>${allDayHtml}${timedHtml}${markerHtml}</div>`;
     }
     html+='</div>';root.innerHTML=html;
     const prev=q('#mPrev'), next=q('#mNext');
-    if(prev)prev.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView077();};
-    if(next)next.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView077();};
+    if(prev)prev.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView078();};
+    if(next)next.onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView078();};
     qa('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);if(typeof closeModal==='function')closeModal();if(typeof render==='function')render();});
     if(typeof decorateVisibleDays==='function')setTimeout(decorateVisibleDays,0);
   }
-  window.renderMonthView=renderMonthView=renderMonthView077;
-  const openMonth077=function(){
+  window.renderMonthView=renderMonthView=renderMonthView078;
+  const openMonth078=function(){
     monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);
     q('#modalTitle').textContent='Monatsübersicht';
-    q('#modalContent').innerHTML='<div id="monthView" class="month-view-rev077"></div>';
+    q('#modalContent').innerHTML='<div id="monthView" class="month-view-rev078"></div>';
     q('#modalBackdrop').style.display='flex';
     q('#saveModal').style.display='none';
-    const modal=q('#modalBackdrop .modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev077');
-    renderMonthView077();
+    const modal=q('#modalBackdrop .modal');if(modal)modal.classList.add('month-modal-wide','month-modal-rev078');
+    renderMonthView078();
   };
-  window.openMonthModal=openMonthModal=openMonth077;
-  const btn=q('#monthBtn');if(btn)btn.onclick=openMonth077;
+  window.openMonthModal=openMonthModal=openMonth078;
+  const btn=q('#monthBtn');if(btn)btn.onclick=openMonth078;
   const oldClose=window.closeModal||closeModal;
   if(typeof oldClose==='function'){
-    window.closeModal=closeModal=function(){const r=oldClose.apply(this,arguments);const modal=q('#modalBackdrop .modal');if(modal)modal.classList.remove('month-modal-wide','month-modal-rev077');return r;};
+    window.closeModal=closeModal=function(){const r=oldClose.apply(this,arguments);const modal=q('#modalBackdrop .modal');if(modal)modal.classList.remove('month-modal-wide','month-modal-rev078');return r;};
   }
-  const style=document.createElement('style');
-  style.textContent=`
-    .month-modal-wide{width:min(1500px,96vw)!important;max-height:94vh!important}.month-modal-rev077 #modalContent,.month-view-rev077{width:100%!important}.month-grid-rev077{display:grid!important;grid-template-columns:repeat(7,minmax(145px,1fr))!important;gap:10px!important}.month-grid-rev077 .month-head{font-size:13px!important;font-weight:900!important;text-align:center!important;color:#73829a!important;padding:0 0 4px!important}.month-cell-rev077{min-height:150px!important;height:auto!important;background:#f8fbff!important;border:1px solid #1f2937!important;border-radius:0!important;padding:8px!important;display:flex!important;flex-direction:column!important;gap:5px!important;overflow:hidden!important;cursor:pointer!important}.month-cell-rev077.out{opacity:.42!important;background:#f3f4f6!important}.month-cell-rev077.today{border:3px solid var(--r76TodayBorder,#0284c7)!important;box-shadow:none!important}.month-day-rev077{display:flex!important;align-items:center!important;gap:6px!important;margin-bottom:2px!important;color:#64748b!important;font-weight:900!important}.month-date-num{font-size:17px!important;color:#334155!important}.month-all-day-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:4px!important;min-height:0!important}.month-pill{border-left:4px solid var(--ev)!important;background:color-mix(in srgb,var(--ev) 18%,#fff)!important;color:#0f172a!important;font-size:11px!important;font-weight:900!important;line-height:1.15!important;padding:4px 5px!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}.month-pill-all-day::before{content:'Ganzt.';font-size:9px;font-weight:800;color:#475569;margin-right:4px}.month-timed-list{display:grid!important;gap:4px!important;margin-top:2px!important}.month-timed-event{display:grid!important;grid-template-columns:36px minmax(0,1fr)!important;gap:5px!important;align-items:center!important;border-left:4px solid var(--ev)!important;background:#fff!important;border-top:1px solid #e2e8f0!important;border-right:1px solid #e2e8f0!important;border-bottom:1px solid #e2e8f0!important;padding:4px 5px!important;min-width:0!important}.month-event-time{font-size:9px!important;color:#64748b!important;font-weight:900!important;white-space:nowrap!important}.month-event-text{font-size:11px!important;color:#0f172a!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}.month-task-markers{margin-top:auto!important;display:flex!important;align-items:center!important;gap:4px!important;min-height:12px!important;padding-top:3px!important}.month-task-marker{height:8px!important;min-width:22px!important;flex:1 1 22px!important;border-radius:999px!important;display:block!important}.month-task-marker-more,.month-more{font-size:10px!important;color:#64748b!important;font-weight:900!important;white-space:nowrap!important}.month-nav-rev077{margin-bottom:14px!important}.month-title{font-size:22px!important}@media(max-width:900px){.month-modal-wide{width:98vw!important}.month-grid-rev077{grid-template-columns:repeat(7,minmax(120px,1fr))!important;overflow-x:auto!important}.month-cell-rev077{min-height:135px!important}.month-all-day-row{grid-template-columns:1fr!important}}`;
-  document.head.appendChild(style);
 })();

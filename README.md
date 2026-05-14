@@ -97,7 +97,7 @@ Nicht umgesetzt:
 - Keine vollständige Neugestaltung der Monatsübersicht; dafür sollte separat ein eigenes Layout-Konzept beschlossen werden.
 
 
-## Revision 077
+## Revision 078
 
 Änderungen:
 - Monatsübersicht deutlich vergrößert und desktopfreundlicher dargestellt.
