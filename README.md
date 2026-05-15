@@ -1,171 +1,36 @@
-# Kalender App – Revision 071 modular
+# Kalender App – Revision 083 Cleanup
 
-Ausgangsbasis: Revision 070 modular.
+Ausgangsbasis: Revision 082 / modularer Zwischenstand.
 
-## Änderungen in Revision 071
+## Ziel dieser Revision
 
-- Wochenendtage sind im Einstellungsdialog unter „Allgemein“ einstellbar: aktivieren/deaktivieren, Farbe, Deckkraft.
-- Samstag und Sonntag werden eindeutig als Wochenende behandelt.
-- Urlaubstage werden nur noch an Nicht-Wochenendtagen markiert.
-- Monatsübersicht wurde stabilisiert, damit Urlaubstage am Wochenende nicht kurz orange aufflackern.
-- Hinweise-Reiter wurde mit konkreten Hinweisen zu Urlaub, Wochenende, Speicherlogik und ICS-Link-Änderungen befüllt.
-- Zeitstrahl-Färbung wurde isoliert: alte Urlaubs-/Wochenendklassen werden entfernt, damit der Sidebar-Zeitstrahl nicht braun/orange durchgefärbt wird.
-- Bestehende ICS-Kalenderquellen speichern Änderungen an Name, Link und Farbe sofort in `calendar_sources`.
-- Wenn ein ICS-Link geändert wird, wird der lokale ICS-Cache dieser Quelle geleert und der Kalender neu geladen.
+Diese Revision ist eine risikoarme Verschlankungsrevision. Der Schwerpunkt liegt nicht auf neuen Funktionen, sondern auf dem Entfernen eindeutig überschatteter Alt-Funktionsblöcke im Hauptcode.
 
-## Struktur
+## Änderungen in Revision 083
 
-- `index.html` enthält die HTML-Grundstruktur.
-- `css/styles.css` enthält die Oberfläche und bestehende Designregeln.
-- `js/app.js` enthält aktuell noch die Hauptlogik und Rev071-Overrides.
-- `api/` ist für spätere Vercel-Serverless-Funktionen reserviert.
+- `js/app.js` bereinigt: 16 überschattete Top-Level-Funktionsdeklarationen entfernt.
+- Entfernte Alt-Funktionsblöcke waren durch spätere gleichnamige Funktionen ersetzt und damit im aktuellen Laufzeitstand nicht mehr maßgeblich.
+- Keine Änderung an Supabase-URL, anon key, Tabellenstruktur oder RLS-Logik.
+- Keine Änderung an ICS-Proxy, ICS-Parser, Datenbanktabellen oder Speicherstrategie.
+- Modulstruktur beibehalten: `config.js`, `utils.js`, `ics-parser.js`, `icons.js`, `app.js`.
+- Syntaxprüfung mit `node --check` für alle JavaScript-Dateien erfolgreich.
 
-## Hinweis
+## Auszutauschende Dateien
 
-Die Datei ist noch nicht fachlich vollständig modularisiert. Diese Revision behebt gezielt die aktuell genannten Darstellungs- und Speicherprobleme im bestehenden modularen Stand.
-
-
-## Revision 072
-
-Änderungen:
-- Zeitstrahl wird nach Klick auf Heute, Tag vor und Tag zurück wieder neutral bereinigt.
-- Alte Urlaubs-/Wochenend-Inline-Styles am Zeitstrahl werden entfernt, damit der braune Hintergrund nicht hängen bleibt.
-- Einstellungen-Button wird nach Render-Vorgängen erneut robust gebunden.
-- Wochenendoption bleibt im Allgemein-Reiter sichtbar und getrennt von Urlaub steuerbar.
-
-Auszutauschende Dateien:
 - `js/app.js`
-- optional `README.md` und `package.json` für Versionsdokumentation
+- optional: `README.md`
+- optional: `package.json`
 
+## Nicht umgesetzt
 
-## Revision 073
+- Keine Entfernung alter Rev-CSS-Blöcke, weil dort viele spätere Designregeln bewusst frühere Regeln überschreiben. Eine automatische Bereinigung wäre optisch riskant.
+- Keine fachliche Zerlegung von `app.js` in viele weitere Module, weil zuerst diese Cleanup-Revision getestet werden sollte.
+- Keine Änderungen an Datenbank-Schreib-/Löschlogik, um Datenverlust oder Seiteneffekte zu vermeiden.
 
-Änderungen:
-- Neue Kalendergruppen werden erst nach erfolgreichem INSERT/UPSERT in `calendar_groups` lokal angezeigt.
-- Neue Tagestask-Gruppen werden sofort in `task_groups` gespeichert.
-- Neue langfristige Gruppen werden sofort in `long_task_groups` gespeichert.
-- Neue ICS- und eigene Kalenderquellen sichern vorher die Kalendergruppe und schreiben anschließend direkt in `calendar_sources`.
-- Der grüne Refresh-Button speichert ausstehende relationale Änderungen vor dem Neuladen.
-- `saveRelationalSnapshot` ist wieder aktiv, aber weiterhin sicher: nur UPSERT, keine automatische Löschung fehlender Datensätze.
+## Prüfstand
 
-Nicht umgesetzt:
-- Keine automatische Tabellenbereinigung beim Speichern, damit ein Reload oder Zwischenstand keine bestehenden Supabase-Daten versehentlich löscht.
-
-
-## Revision 074
-
-Änderungen:
-- Globale Sofort-Speicherung für Kalendergruppen, Kalenderquellen, Tagestask-Gruppen, Tagestasks, langfristige Gruppen, langfristige Tasks, eigene Termine, Projekte und Projekt-Tasks ergänzt.
-- Der grüne Refresh nutzt weiterhin vorher die aktive Speicherung, damit lokale Änderungen nicht durch einen Datenbank-Reload überschrieben werden.
-- Der Zeitstrahl ist von Urlaubs-, Wochenend- und Heute-Hintergründen entkoppelt und bleibt neutral/weiß.
-- Bestehende Wochenend-/Urlaubs-Klassen werden am Zeitstrahl nach Navigation aktiv entfernt, um Flackern zu unterbinden.
-
-Nicht umgesetzt:
-- Keine automatische Löschung fehlender Zeilen beim Snapshot. Das bleibt absichtlich deaktiviert, um Datenverlust in Supabase zu vermeiden.
-
-
-## Revision 075
-
-Änderungen:
-- Stabilitätsrevision auf Basis Revision 074, kein Cleanup-Refactoring.
-- Sofort-Speicherung nach Erstellen, Ändern, Löschen und Speichern im Modal zusätzlich abgesichert.
-- Grüner Refresh und Navigation lösen vor/nach UI-Aktionen eine persistente Speicherung aus.
-- Löschverhalten vereinheitlicht: Tages-Tasks, langfristige Tasks, Projekt-Tasks und Projekte fragen konsistent nach Bestätigung.
-- Modal-System stabilisiert: alte Save-/Delete-Zustände werden beim Öffnen/Schließen bereinigt.
-- Farbauswahl in Einstellungen wird wieder als kompakter Farbeimer/Farbbutton dargestellt statt als langer horizontaler Farbbalken.
-- Sidebar-Zeitstrahl bleibt vollständig neutral/weiß und wird nicht von Urlaub, Wochenende oder aktuellem Tag eingefärbt.
-
-Auszutauschende Dateien:
-- `js/app.js`
-- `css/styles.css`
-- optional `README.md`, `package.json`, `manifest.json`
-
-Nicht umgesetzt:
-- Keine strukturelle Verschlankung und keine Entfernung alter Funktionsblöcke, weil das bei der verworfenen vorherigen Revision zu Fehlern geführt hat.
-
-
-## Revision 076
-
-Änderungen:
-- Einstellungen stabilisiert: Wochenendtage bleiben dauerhaft sichtbar und werden im App-State gespeichert.
-- Farbauswahl in den Einstellungen auf neutralen Farbeimer-Button mit separater Farbvorschau umgestellt.
-- Linienfarbe des aktuellen Tags nutzt denselben Farbauswahl-Stil.
-- Tages- und Monatsfärbung wird nach Navigation synchron nachgezogen, um sichtbares Flackern zu reduzieren.
-- Seitlicher Zeitstrahl bleibt neutral und übernimmt keine Urlaubs-/Wochenendfarben.
-
-Nicht umgesetzt:
-- Keine vollständige Neugestaltung der Monatsübersicht; dafür sollte separat ein eigenes Layout-Konzept beschlossen werden.
-
-
-## Revision 078
-
-Änderungen:
-- Monatsübersicht deutlich vergrößert und desktopfreundlicher dargestellt.
-- Ganztägige Termine werden oben in den Tageszellen platziert und können nebeneinander stehen.
-- Zeitgebundene Termine werden darunter chronologisch angezeigt.
-- Tagestasks werden in der Monatsansicht nur noch als farbige Gruppenmarker angezeigt, nicht mehr als einzelne Aufgabenliste.
-- Monatszellen sind lesbarer, höher und besser strukturiert.
-
-Nicht umgesetzt:
-- Keine Änderung an Speicherlogik oder Datenbankstruktur in dieser Revision.
-
-
-## Revision 079
-
-Änderungen:
-- Neue Datei `js/core/utils.js` ergänzt.
-- Reine Hilfsfunktionen aus `js/app.js` ausgelagert: DOM-Selectoren, ID-Erzeugung, HTML-Escaping, Textkürzung, Datumshilfen, ISO-Kalenderwoche und Wiederholungslabel.
-- `index.html` lädt `js/core/utils.js` vor `js/app.js`.
-- Keine Änderung an Supabase-Zugang, Datenbankstruktur, Speicherlogik, Löschlogik, ICS-Proxy oder Monatslayout.
-- Syntaxprüfung für `js/core/utils.js` und `js/app.js` mit `node --check` erfolgreich.
-
-Auszutauschende Dateien:
-- `index.html`
-- `js/app.js`
-- `js/core/utils.js`
-- optional `README.md`, `package.json`
-
-Nicht umgesetzt:
-- Keine fachliche Aufteilung der Render-, Modal-, Supabase- oder ICS-Logik. Das wäre deutlich riskanter und sollte erst nach einem Funktionstest dieser Sicherheitsrevision erfolgen.
-
-
-## Revision 080
-
-Änderungen:
-- Konfiguration, Supabase-URL, Proxy-URL, Tabellen-Namen, Default-State, Farben und Palette aus `js/app.js` in `js/core/config.js` ausgelagert.
-- SVG-Icon-Funktionen aus `js/app.js` in `js/ui/icons.js` ausgelagert.
-- Reine ICS-Parser-Hilfsfunktionen aus `js/app.js` in `js/core/ics-parser.js` ausgelagert.
-- `index.html` lädt die Module jetzt in dieser Reihenfolge: Supabase SDK, Config, Utils, ICS-Parser, Icons, App.
-- Nachweislich ungenutzte Funktionen entfernt: `completedLongList`, `openICSLinkModal`, `colorPaletteHtml`, `saveActiveModeVisibility`.
-- Speicherlogik, Supabase-Schreiblogik, Löschlogik, ICS-Proxy und Datenbankstruktur unverändert gelassen.
-
-Nicht umgesetzt:
-- Keine Entfernung alter Rev-Patches und Override-Blöcke, wenn Abhängigkeiten nicht eindeutig beweisbar waren. Das wäre aktuell zu riskant, weil viele spätere Funktionen ältere Funktionen bewusst überschreiben.
-- Keine Aufteilung der kompletten UI-Rendering-Logik in einem Schritt. Das folgt besser in einer separaten Revision nach Funktionstest von Rev080.
-
-
-## Revision 081
-
-Änderungen:
-- `js/ui/icons.js` erweitert: Pfeil hoch/runter, Bearbeiten, Plus, Chevron, Farbeimer, Palette, Kalender und Refresh als zentrale Icon-Funktionen ergänzt.
-- `js/app.js` verwendet die zentralen Icon-Funktionen an weiteren Stellen statt direkter Textsymbole.
-- Bestehende Event-Handler und `data-*` Attribute wurden nicht umgebaut.
-
-Nicht umgesetzt:
-- Statische Topbar-Icons in `index.html` wurden nicht vollständig auf JS-Icon-Funktionen umgestellt, weil diese vor dem Laden von `icons.js` nicht direkt verfügbar sind.
-- CSS-Altlasten wurden in dieser Revision nicht bereinigt.
-
-
-## Revision 082
-
-Änderungen:
-- SVG-Icons in normalen Buttons werden global begrenzt, damit sie keine übergroßen Kacheln mehr erzeugen.
-- „Alle einklappen“ wurde wieder kompakt skaliert.
-- Hinzufügen-Buttons für Tagestasks, Kalendergruppen, langfristige Gruppen und Projekt-Tasks wurden kompakter gemacht.
-- Plus-Buttons für Kalenderquellen und eigene Termine behalten wieder feste quadratische Maße.
-
-Nicht geändert:
-- Keine Speicherlogik.
-- Keine Supabase-Logik.
-- Keine ICS-Logik.
-- Keine Datenbankstruktur.
+- `node --check js/app.js`: erfolgreich
+- `node --check js/core/config.js`: erfolgreich
+- `node --check js/core/utils.js`: erfolgreich
+- `node --check js/core/ics-parser.js`: erfolgreich
+- `node --check js/ui/icons.js`: erfolgreich

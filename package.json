@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev082-icon-layout-fix",
-  "version": "0.82.0",
+  "name": "kalender-app-rev083-cleanup",
+  "version": "0.83.0",
   "private": true,
-  "description": "Revision 081: zentrale UI-Icons erweitert und Darstellung im Hauptcode vereinheitlicht",
+  "description": "Revision 083: risikoarme Code-Verschlankung durch Entfernung überschatteter Top-Level-Funktionen",
   "scripts": {
     "start": "vercel dev"
   }

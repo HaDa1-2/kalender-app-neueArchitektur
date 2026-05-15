@@ -334,20 +334,6 @@ function moveTaskColumn(from,to){
   state.taskColumns.splice(to,0,moved);
   render();
 }
-function renderCalendarConfig(){const root=$('#calendarConfig');root.innerHTML='';state.calendars.forEach((cal,i)=>{const visible=cal.visible!==false;const div=document.createElement('div');div.className='calendar-pane'+(!visible?' hidden-cal':'');div.dataset.calIndex=i;div.innerHTML=`<div class="pane-head"><div class="cal-title-line"><button class="cal-title-click" data-edit-cal="${i}" title="Kalendername ändern"><span class="pane-name">${escapeHtml(cal.name)}</span><span class="cal-edit-icon">${iconEdit()}</span></button></div><div class="pane-actions"><span class="order-stack"><button class="btn small ui-icon-btn order-btn" data-move-cal="${i}:-1" title="Nach oben" ${i===0?'disabled':''}>${iconArrowUp()}</button><button class="btn small ui-icon-btn order-btn" data-move-cal="${i}:1" title="Nach unten" ${i===state.calendars.length-1?'disabled':''}>${iconArrowDown()}</button></span><button class="btn small ui-icon-btn visibility-btn ${visible?'':'hidden-state'}" data-toggle-cal="${i}" title="${visible?'Kalender ausblenden':'Kalender einblenden'}">${iconEye(visible)}</button><button class="btn small add-source-plus" data-add-source="${i}" title="Kalenderquelle hinzufügen">${iconPlus()}</button><button class="btn small ui-icon-btn trash-unified" data-delete-cal="${i}" title="Kalender löschen">${iconTrash()}</button></div></div>${cal.links.length?cal.links.map((l,idx)=>{const lv=l.visible!==false;const isOwn=l.type==='own';return `<div class="ics-item ${lv?'':'hidden-ics'}"><div class="ics-click" title="${isOwn?'Eigener Kalender':'ICS-Kalender'}"><b title="${escapeHtml(l.name)}"><span class="ics-color-dot" style="background:${escapeHtml(l.color||state.colors.event)}"></span>${escapeHtml(shortText(l.name,34))}</b><span>${isOwn?'Eigener Kalender':'ICS-Kalender aktiv'}</span></div><div class="ics-actions"><button class="btn small ui-icon-btn visibility-btn" data-toggle-ics="${i}:${idx}" title="${lv?'Ausblenden':'Einblenden'}">${iconEye(lv)}</button><button class="btn small ui-icon-btn" data-ics-settings="${i}:${idx}" title="${isOwn?'Eigenen Kalender einstellen':'ICS-Kalender einstellen'}">${iconSettings()}</button><button class="btn small ui-icon-btn trash-unified" data-del-ics="${i}:${idx}" title="Kalenderquelle entfernen">${iconTrash()}</button></div></div>`}).join(''):'<div class="empty">Noch keine Kalenderquelle.</div>'}<div class="status">${escapeHtml(cal.status||'')}</div>`;root.appendChild(div);});
-if(!state.calendars.length){const note=document.createElement('div');note.className='no-calendar-note';note.innerHTML='Noch kein Kalender angelegt. Lege unten einen Kalender an und füge danach einen oder mehrere ICS- oder eigene Kalender hinzu.';root.appendChild(note);}
-const add=document.createElement('div');add.className='add-calendar-box';add.innerHTML=`<div><b>Kalender hinzufügen</b><div class="hint">Neuen Kalenderbereich erstellen und anschließend Kalenderquellen hinterlegen.</div></div><button class="btn primary small" id="addCalendarBtn">${iconPlus()} Kalender</button>`;root.appendChild(add);
-$$('[data-toggle-cal]').forEach(b=>b.onclick=()=>{if(!requireLogin())return;const i=Number(b.dataset.toggleCal);state.calendars[i].visible=state.calendars[i].visible===false;render();});
-$$('[data-move-cal]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();const [i,d]=b.dataset.moveCal.split(':').map(Number);moveCalendar(i,i+d);});
-$$('[data-toggle-ics]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();if(!requireLogin())return;const [i,idx]=b.dataset.toggleIcs.split(':').map(Number);const l=state.calendars[i].links[idx];l.visible=l.visible===false;render();});
-$$('[data-edit-cal]').forEach(b=>b.onclick=()=>{if(requireLogin())openCalendarNameModal(Number(b.dataset.editCal));});
-$$('[data-add-source]').forEach(b=>b.onclick=()=>{if(requireLogin())openSourceChoiceModal(Number(b.dataset.addSource));});
-$$('[data-ics-settings]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();const [i,idx]=b.dataset.icsSettings.split(':').map(Number);const link=state.calendars[i].links[idx];if(link?.type==='own')openOwnSourceModal(i,idx);else openICSSettingsModal(i,idx);});
-$$('[data-del-ics]').forEach(b=>b.onclick=()=>{const [i,idx]=b.dataset.delIcs.split(':').map(Number);const target=state.calendars[i].links[idx];if(target?.type==='own'){const count=(state.calendars[i].ownEvents||[]).filter(e=>e.sourceId===target.id).length;const ok=confirm(`Sind Sie sicher, dass Sie diesen eigenen Kalender löschen möchten?\n\nAlle darin erstellten Termine werden unwiderruflich gelöscht.\nBetroffene Termine: ${count}`);if(!ok)return;}else{const ok=confirm('Diese Kalenderquelle wirklich entfernen?');if(!ok)return;}const removed=state.calendars[i].links.splice(idx,1)[0];if(removed?.id){state.calendars[i].events=(state.calendars[i].events||[]).filter(e=>e.icsId!==removed.id);state.calendars[i].ownEvents=(state.calendars[i].ownEvents||[]).filter(e=>e.sourceId!==removed.id);}else{state.calendars[i].events=[];}state.calendars[i].status='Kalenderquelle entfernt.';render();});
-$$('[data-delete-cal]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.deleteCal);if(confirm('Kalender inklusive aller Quellen und eigenen Terminen löschen?')){state.calendars.splice(i,1);render();}});
-const addBtn=$('#addCalendarBtn');if(addBtn)addBtn.onclick=()=>{if(requireLogin())openAddCalendarModal();};
-}
-
 function renderTaskColumnConfig(){
   const root=$('#taskColumnConfig');
   if(!root)return;
@@ -367,24 +353,7 @@ function openTaskColumnModal(idx){
   $$('[data-taskcol-color-picker] .color-choice').forEach(btn=>btn.onclick=()=>{col.color=btn.dataset.color; if(!isNew){const name=$('#mTaskColName')?.value.trim(); if(name)col.name=name; persist();render();closeModal();}});
 }
 
-function renderTimeline(){const root=$('#timeline');root.innerHTML='';let start=addDays(new Date(new Date().setHours(0,0,0,0)),state.offset);if((state.startMode||'rolling')==='week'){const base=new Date();base.setHours(0,0,0,0);start=addDays(base,-((base.getDay()+6)%7)+state.offset);}if((state.startMode||'rolling')==='workweek'){const base=new Date();base.setHours(0,0,0,0);start=addDays(base,-((base.getDay()+6)%7)+state.offset);state.days=Math.min(state.days,5);}const end=addDays(start,state.days-1);$('#rangeLabel').textContent=`${deDate(start)} bis ${deDate(end)}`;for(let i=0;i<state.days;i++)root.appendChild(dayCard(addDays(start,i)));}
-function dayCard(date){
-const today=new Date();today.setHours(0,0,0,0);const iso=fmtDate(date);
-const openTasks=state.tasks.filter(t=>t.date===iso&&!t.done);
-const overdue=sameDay(date,today)?state.tasks.filter(t=>t.date<fmtDate(today)&&!t.done):[];
-const completedTasks=state.tasks.filter(t=>t.done&&t.completedDate===iso);
-const completedLong=state.longterm.filter(t=>t.done&&t.completedDate===iso);
-const showCompleted=completedTasks.length||completedLong.length;
-const day=document.createElement('div');day.className='day'+(sameDay(date,today)?' today':'');
-day.innerHTML=`<div class="day-head"><div class="day-num"><span class="day-title-weekday">${escapeHtml(date.toLocaleDateString('de-DE',{weekday:'long'}))}</span><span class="day-title-date">${escapeHtml(date.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}))}</span></div>${sameDay(date,today)?'<span class="badge">Aktueller Tag</span>':''}</div><div class="day-body"><div class="partition"><div class="part-head"><div class="part-title">1. Terminkalender</div></div><div class="split">${calendarLanes(date)}</div></div><div class="partition"><div class="part-head"><div class="part-title">2. Tagestasks</div><button class="btn small" data-task-date="${iso}">${iconPlus()} Hinzufügen</button></div>${taskColumnsList(openTasks)}</div>${sameDay(date,today)?`<div class="partition"><div class="part-head"><div class="part-title">3. Überzogene Tasks</div></div>${taskList(overdue,true)}</div>`:''}${showCompleted?`<div class="partition"><div class="part-head"><div class="part-title">${sameDay(date,today)?'4':'3'}. An diesem Tag erledigte Tasks</div></div>${completedDoneList(completedTasks,completedLong)}</div>`:''}</div>`;
-day.querySelector('[data-task-date]').onclick=()=>openTaskModal(iso);
-day.querySelectorAll('[data-toggle-task]').forEach(c=>{c.onclick=ev=>ev.stopPropagation();c.onchange=(ev)=>{ev.stopPropagation();const t=state.tasks.find(x=>x.id===c.dataset.toggleTask);if(!requireLogin()){c.checked=!c.checked;return;}if(t){t.done=c.checked;t.completedDate=c.checked?fmtDate(new Date()):null;render();}}});
-day.querySelectorAll('[data-delete-task]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();if(!requireLogin())return;state.tasks=state.tasks.filter(x=>x.id!==b.dataset.deleteTask);render();});
-day.querySelectorAll('[data-task-ref]').forEach(card=>card.onclick=()=>openTaskDetailModal(card.dataset.taskRef));
-day.querySelectorAll('[data-add-own-event]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();const [ci,iso]=b.dataset.addOwnEvent.split(':');openOwnEventModal(Number(ci),iso);});
-day.querySelectorAll('[data-event-ref]').forEach(card=>card.onclick=()=>openEventDetailModal(card.dataset.eventRef));
-return day;}
-function eventVisualHeight(e){
+function renderTimeline(){const root=$('#timeline');root.innerHTML='';let start=addDays(new Date(new Date().setHours(0,0,0,0)),state.offset);if((state.startMode||'rolling')==='week'){const base=new Date();base.setHours(0,0,0,0);start=addDays(base,-((base.getDay()+6)%7)+state.offset);}if((state.startMode||'rolling')==='workweek'){const base=new Date();base.setHours(0,0,0,0);start=addDays(base,-((base.getDay()+6)%7)+state.offset);state.days=Math.min(state.days,5);}const end=addDays(start,state.days-1);$('#rangeLabel').textContent=`${deDate(start)} bis ${deDate(end)}`;for(let i=0;i<state.days;i++)root.appendChild(dayCard(addDays(start,i)));}function eventVisualHeight(e){
   if(e.allDay)return 46;
   const st=new Date(e.start), en=e.end?new Date(e.end):null;
   if(!en||isNaN(st)||isNaN(en))return 46;
@@ -413,33 +382,7 @@ function completedDoneList(tasks,longs){
   const a=(tasks||[]).map(t=>taskCardHtml(t,false,true)).join('');
   const b=(longs||[]).map(t=>`<div class="card completed-long completed-task-card" data-task-ref="long:${t.id}"><div><span class="completed-title">${escapeHtml(shortText(t.title,34))}</span><span class="completed-meta">Langfristiger Task erledigt am ${escapeHtml(t.completedDate)}</span></div></div>`).join('');
   return `<div class="completed-grid">${a}${b}</div>`;
-}
-function openTaskDetailModal(ref){
-  if(!requireLogin())return;
-  const [type,id]=ref.split(':');
-  const isLong=type==='long';
-  const t=isLong?state.longterm.find(x=>x.id===id):state.tasks.find(x=>x.id===id);
-  if(!t)return;
-  $('#modalTitle').textContent=isLong?'Langfristigen Task bearbeiten':'Tagestask bearbeiten';
-  $('#modalContent').innerHTML=`<div class="edit-grid"><label>Titel</label><input id="editTaskTitle" value="${escapeHtml(t.title||'')}">${isLong?`<label>Erstellt am</label><input value="${escapeHtml(t.createdDate||'—')}" disabled>`:`<label>Tagestask-Gruppe</label><select id="editTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}" ${(t.columnId||state.taskColumns[0].id)===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}</select><label>Soll-Datum</label><input id="editTaskDate" type="date" value="${escapeHtml(t.date||fmtDate(new Date()))}">`}<label>Status</label><select id="editTaskDone"><option value="false" ${!t.done?'selected':''}>Offen</option><option value="true" ${t.done?'selected':''}>Erledigt</option></select><label>Erledigt am</label><input id="editTaskCompleted" type="date" value="${escapeHtml(t.completedDate||'')}"><label>Notiz</label><textarea id="editTaskNote" rows="7">${escapeHtml(t.note||'')}</textarea></div>`;
-  $('#modalBackdrop').style.display='flex';
-  $('#saveModal').style.display='';
-  $('#saveModal').onclick=()=>{
-    const title=$('#editTaskTitle').value.trim();
-    if(title)t.title=title;
-    t.done=$('#editTaskDone').value==='true';
-    t.completedDate=$('#editTaskCompleted').value||null;
-    if(t.done&&!t.completedDate)t.completedDate=fmtDate(new Date());
-    if(!t.done)t.completedDate=null;
-    t.note=$('#editTaskNote').value.trim();
-    if(!isLong){t.date=$('#editTaskDate').value||t.date;t.columnId=$('#editTaskColumn').value;}
-    closeModal();render();
-  };
-  $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();$('#saveModal').click();}};
-}
-function taskList(list,overdue=false){if(!list.length)return'<div class="empty">Keine Einträge.</div>';return list.map(t=>taskCardHtml(t,overdue,false)).join('');}
-function renderLong(){const root=$('#longTermList');root.innerHTML=state.longterm.length?state.longterm.map(t=>{const meta=t.completedDate?`Erledigt am ${t.completedDate}`:`Erstellt am ${t.createdDate||'unbekannt'}`;const note=t.note?`<span class="long-note" title="${escapeHtml(t.note)}">${escapeHtml(shortText(t.note,80))}</span>`:'';return `<div class="long-card ${t.done?'completed-task-card':''}" data-task-ref="long:${t.id}"><div class="task-row"><input type="checkbox" ${t.done?'checked':''} data-toggle-long="${t.id}"><div><span class="long-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</span><span class="long-meta">${escapeHtml(meta)}</span>${note}</div><button class="kebab" data-delete-long="${t.id}">×</button></div></div>`}).join(''):'<div class="empty">Keine langfristigen Aufgaben.</div>';$$('[data-toggle-long]').forEach(c=>{c.onclick=ev=>ev.stopPropagation();c.onchange=(ev)=>{ev.stopPropagation();const t=state.longterm.find(x=>x.id===c.dataset.toggleLong);if(!requireLogin()){c.checked=!c.checked;return;}if(t){t.done=c.checked;t.completedDate=c.checked?fmtDate(new Date()):null;render();}}});$$('[data-delete-long]').forEach(b=>b.onclick=(ev)=>{ev.stopPropagation();if(!requireLogin())return;state.longterm=state.longterm.filter(x=>x.id!==b.dataset.deleteLong);render();});$$('#longTermList [data-task-ref]').forEach(card=>card.onclick=()=>openTaskDetailModal(card.dataset.taskRef));}
-function closeModal(){if(document.body.classList.contains('login-required')&&!currentUser)return;const md=document.querySelector('#deleteModeBtnAction');if(md)md.remove();$('#modalBackdrop').style.display='none';$('#saveModal').style.display='';$('#modalContent').onkeydown=null;} function openModal(title,html,onSave){$('#saveModal').style.display='';$('#modalTitle').textContent=title;$('#modalContent').innerHTML=html;$('#modalBackdrop').style.display='flex';setTimeout(()=>{const focusEl=$('#modalContent input:not([disabled]):not([readonly]), #modalContent textarea:not([disabled]):not([readonly]), #modalContent select:not([disabled])');if(focusEl){focusEl.focus();if(focusEl.select&&focusEl.tagName==='INPUT')focusEl.select();}},0);const doSave=()=>{onSave();closeModal();render();};$('#saveModal').onclick=doSave;$('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();doSave();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();doSave();}};} $('#cancelModal').onclick=closeModal;$('#modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};
+}function taskList(list,overdue=false){if(!list.length)return'<div class="empty">Keine Einträge.</div>';return list.map(t=>taskCardHtml(t,overdue,false)).join('');}function closeModal(){if(document.body.classList.contains('login-required')&&!currentUser)return;const md=document.querySelector('#deleteModeBtnAction');if(md)md.remove();$('#modalBackdrop').style.display='none';$('#saveModal').style.display='';$('#modalContent').onkeydown=null;} function openModal(title,html,onSave){$('#saveModal').style.display='';$('#modalTitle').textContent=title;$('#modalContent').innerHTML=html;$('#modalBackdrop').style.display='flex';setTimeout(()=>{const focusEl=$('#modalContent input:not([disabled]):not([readonly]), #modalContent textarea:not([disabled]):not([readonly]), #modalContent select:not([disabled])');if(focusEl){focusEl.focus();if(focusEl.select&&focusEl.tagName==='INPUT')focusEl.select();}},0);const doSave=()=>{onSave();closeModal();render();};$('#saveModal').onclick=doSave;$('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();doSave();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();doSave();}};} $('#cancelModal').onclick=closeModal;$('#modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};
 function openAddCalendarModal(){if(!requireLogin())return;openModal('Kalender hinzufügen',`<input id="mNewCalName" placeholder="Kalendername, z. B. Geschäftskalender"><div class="hint">Der Kalender wird direkt sichtbar angelegt. Danach kannst du mehrere ICS-Links hinzufügen oder ihn ausblenden.</div>`,()=>{const name=$('#mNewCalName').value.trim()||`Kalender ${state.calendars.length+1}`;state.calendars.push({name,links:[],events:[],ownEvents:[],status:'Noch kein ICS-Link hinterlegt.',visible:true});});}
 function openSourceChoiceModal(pane){
   if(!requireLogin())return;
@@ -476,9 +419,7 @@ function openOwnSourceModal(pane,idx){
   });
 }
 function openCalendarNameModal(pane){if(!requireLogin())return;const cal=state.calendars[pane];openModal('Kalendername ändern',`<input id="mCalName" value="${escapeHtml(cal.name)}" placeholder="z. B. Geschäftskalender"><div class="hint">Ändert nur den sichtbaren Namen in der Oberfläche. ICS-Links bleiben unverändert.</div>`,()=>{const v=$('#mCalName').value.trim();if(v)cal.name=v;});}
-function openTaskModal(date=fmtDate(new Date())){if(!requireLogin())return;ensureSettings();openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea>`,()=>{const title=$('#mTitle').value.trim();if(!title)return toast('Aufgabe ohne Titel wurde nicht gespeichert.');state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate').value,done:false,note:$('#mNote').value.trim(),columnId:$('#mTaskColumn').value});});}
-function openLongModal(){if(!requireLogin())return;openModal('Langfristigen Task hinzufügen',`<input id="mTitle" placeholder="Langfristiger Task"><textarea id="mNote" rows="3" placeholder="Notiz"></textarea>`,()=>{const title=$('#mTitle').value.trim();if(!title)return toast('Aufgabe ohne Titel wurde nicht gespeichert.');state.longterm.push({id:crypto.randomUUID(),title,done:false,note:$('#mNote').value.trim(),createdDate:fmtDate(new Date()),completedDate:null});});}
-function openICSModal(pane){if(!requireLogin())return;openModal(`ICS-Link hinzufügen · ${state.calendars[pane].name}`,`<input id="mName" placeholder="Name, z. B. Privat Kalender"><input id="mUrl" placeholder="webcal://... oder https://.../calendar.ics"><div class="hint">webcal:// wird automatisch in https:// umgewandelt. Der Link wird gespeichert, aber in der Oberfläche nicht ausgeschrieben.</div>`,async()=>{const name=$('#mName').value.trim()||'ICS Kalender';const url=normalizeICSUrl($('#mUrl').value.trim());if(!url)return toast('Kein ICS-Link gespeichert.');state.calendars[pane].links.push({id:makeId('ics'),type:'ics',name,url,color:state.colors?.event||defaultColors.event,visible:true});await loadICS(pane);});}
+function openTaskModal(date=fmtDate(new Date())){if(!requireLogin())return;ensureSettings();openModal('Tagestask hinzufügen',`<input id="mTitle" placeholder="Aufgabe"><select id="mTaskColumn">${state.taskColumns.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}</select><input id="mDate" type="date" value="${date}"><textarea id="mNote" rows="3" placeholder="Notiz / Kontext"></textarea>`,()=>{const title=$('#mTitle').value.trim();if(!title)return toast('Aufgabe ohne Titel wurde nicht gespeichert.');state.tasks.push({id:crypto.randomUUID(),title,date:$('#mDate').value,done:false,note:$('#mNote').value.trim(),columnId:$('#mTaskColumn').value});});}function openICSModal(pane){if(!requireLogin())return;openModal(`ICS-Link hinzufügen · ${state.calendars[pane].name}`,`<input id="mName" placeholder="Name, z. B. Privat Kalender"><input id="mUrl" placeholder="webcal://... oder https://.../calendar.ics"><div class="hint">webcal:// wird automatisch in https:// umgewandelt. Der Link wird gespeichert, aber in der Oberfläche nicht ausgeschrieben.</div>`,async()=>{const name=$('#mName').value.trim()||'ICS Kalender';const url=normalizeICSUrl($('#mUrl').value.trim());if(!url)return toast('Kein ICS-Link gespeichert.');state.calendars[pane].links.push({id:makeId('ics'),type:'ics',name,url,color:state.colors?.event||defaultColors.event,visible:true});await loadICS(pane);});}
 async function loadICS(pane){if(!requireLogin())return;const cal=state.calendars[pane];cal.events=[];cal.status='Lade ICS...';renderCalendarConfig();persist();let errors=[];for(const link of (cal.links||[])){if(link.type==='own'||!link.url)continue;try{const sourceUrl=normalizeICSUrl(link.url);const res=await fetch(buildICSFetchUrl(sourceUrl),{cache:'no-store'});if(!res.ok)throw new Error('HTTP '+res.status);const text=await res.text();if(!/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(text))throw new Error('Antwort ist keine ICS-Datei. Link/Freigabe/Proxy prüfen.');const parsed=parseICS(text,link.name).map(e=>Object.assign(e,{icsId:link.id,icsColor:link.color||state.colors.event,icsName:link.name}));cal.events.push(...parsed);if(!parsed.length)errors.push(`${link.name}: ICS geladen, aber keine Termine gefunden.`);}catch(e){errors.push(`${link.name}: ${e.message}`);}}cal.events=dedupeEvents(cal.events);const stamp=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});cal.status=errors.length?`${cal.events.length} Termine geladen. Fehler: ${errors.join(' | ')}. Zuletzt: ${stamp}`:`${cal.events.length} Termine geladen. Zuletzt: ${stamp}`;$('#diagBox').textContent=cal.status;persist();}
 function dedupeEvents(events){const map=new Map();(events||[]).forEach(e=>{const norm=v=>String(v||'').trim().toLowerCase();const key=[e.icsId||'',norm(e.summary),e.start||'',e.end||''].join('|');const old=map.get(key);if(!old||(!old.rrule&&e.rrule))map.set(key,e);});return Array.from(map.values());}
 function buildICSFetchUrl(url){let base=(state.proxyUrl||DEFAULT_PROXY_URL).trim();if(!base)return url;if(!/[?&]url=$/.test(base)){base=base.replace(/\/+$/,'')+'/?url=';}return base+encodeURIComponent(url);}
@@ -566,10 +507,7 @@ function openCloudModal(){
   $('#cloudLoginBtn').onclick=cloudLogin;
   $('#cloudSignupBtn').onclick=cloudSignup;
   $('#cloudLogoutBtn').onclick=cloudLogout;
-}
-
-function openSyncSettingsModal(){openModal('Allgemeine Einstellungen',`<div class="settings-grid"><div class="field"><label>Erscheinung</label><select id="mTheme"><option value="light">Hell</option><option value="dark">Dunkel</option></select></div><div class="field"><label>Kanten</label><select id="mCornerStyle"><option value="rounded">Abgerundet</option><option value="sharp">Eckig / 90°</option></select></div><div class="section-title">Synchronisierung</div><button class="btn primary" id="mSyncNow" type="button">Alle ICS-Links aktualisieren</button><div class="field"><label>Intervall</label><select id="mSyncInterval"><option value="0">Aus / manuell</option><option value="5">Alle 5 Min.</option><option value="15">Alle 15 Min.</option><option value="30">Alle 30 Min.</option><option value="60">Alle 60 Min.</option></select></div><div class="field"><label>Proxy-URL</label><input id="mProxyUrl" class="readonly-input" value="${escapeHtml(currentUser?(state.proxyUrl||DEFAULT_PROXY_URL):'')}" readonly disabled></div><div class="dev-note">Nur während der Entwicklung sichtbar, um eventuelle Fehlerquellen beim Laden externer ICS-Links einzugrenzen. Der Wert wird automatisch verwendet und ist hier nicht bearbeitbar.</div><div class="hint" id="mSyncHint">ICS-Links werden über den fest hinterlegten Proxy geladen.</div></div>`,()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;setupAutoSync();});$('#mTheme').value=state.theme||'light';$('#mCornerStyle').value=state.cornerStyle||'rounded';$('#mSyncInterval').value=String(state.syncInterval??15);$('#mSyncNow').onclick=async()=>{state.theme=$('#mTheme').value;state.cornerStyle=$('#mCornerStyle').value;state.syncInterval=Number($('#mSyncInterval').value);state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;persist();setupAutoSync();applyAppearance();await syncAllICS();};}
-function openLegendModal(){openModal('Legende',`<div class="legend-grid">
+}function openLegendModal(){openModal('Legende',`<div class="legend-grid">
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Kalenderereignis</b><div class="hint">Die Farbe wird direkt am jeweiligen ICS- oder eigenen Kalender eingestellt.</div></div></div></div>
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Tagestask</b><div class="hint">Aufgaben mit konkretem Datum. Die Gruppierung erfolgt über Tagestask-Gruppen.</div></div></div></div>
 <div class="legend-row static-legend"><div class="legend-main"><div><b>Überzogener Task</b><div class="hint">Offene Aufgaben und Projekt-Tasks aus vergangenen Tagen.</div></div></div></div>
@@ -577,29 +515,7 @@ function openLegendModal(){openModal('Legende',`<div class="legend-grid">
 </div>`,()=>{persist();render();});}
 let syncTimer=null;function setupAutoSync(){if(syncTimer)clearInterval(syncTimer);syncTimer=null;const hint=$('#syncHint')||$('#mSyncHint');if(!currentUser){if(hint)hint.textContent='Nicht angemeldet. Automatische Synchronisierung ist deaktiviert.';return;}state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;const m=Number(state.syncInterval||0);if(hint)hint.textContent=m?`Automatische Synchronisierung aktiv: alle ${m} Minuten. ICS-Links werden über den fest hinterlegten Proxy geladen.`:'Automatische Synchronisierung aus. Manuell über den Button aktualisieren.';if(m>0){syncTimer=setInterval(syncAllICS,m*60*1000);}}
 let monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);function openMonthModal(){monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);$('#modalTitle').textContent='Monatsübersicht';$('#modalContent').innerHTML='<div id="monthView"></div>';$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';renderMonthView();}
-function renderMonthView(){const root=$('#monthView');if(!root)return;const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));const days=['Mo','Di','Mi','Do','Fr','Sa','So'];let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done);for(let i=0;i<42;i++){const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();const events=visibleCalendars().flatMap(({cal:c})=>{const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});return [...ics,...own];}).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status}));const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done);const showOverdueBar=sameDay(d,today)&&openOverdueToday;const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${events.slice(0,3).map(e=>`<div class="month-event" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${escapeHtml(shortText(e.summary,38))}</div>`).join('')}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;}html+='</div>';root.innerHTML=html;$('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};$('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};$$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});}
-
-
-function updateSidebarToggle(){
-  const collapsed=document.body.classList.contains('sidebar-collapsed');
-  const btn=document.querySelector('#sidebarToggleBtn');
-  if(!btn)return;
-  btn.innerHTML=collapsed?'›':'‹';
-  btn.title=collapsed?'Seitenleiste aufklappen':'Seitenleiste einklappen';
-}
-function initSidebarToggle(){
-  const saved=localStorage.getItem('kalender_sidebar_collapsed')==='1';
-  document.body.classList.toggle('sidebar-collapsed',saved);
-  updateSidebarToggle();
-  const btn=document.querySelector('#sidebarToggleBtn');
-  if(btn)btn.onclick=()=>{
-    document.body.classList.toggle('sidebar-collapsed');
-    localStorage.setItem('kalender_sidebar_collapsed',document.body.classList.contains('sidebar-collapsed')?'1':'0');
-    updateSidebarToggle();
-  };
-}
-
-function collectSearchItems(){
+function renderMonthView(){const root=$('#monthView');if(!root)return;const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));const days=['Mo','Di','Mi','Do','Fr','Sa','So'];let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done);for(let i=0;i<42;i++){const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();const events=visibleCalendars().flatMap(({cal:c})=>{const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});return [...ics,...own];}).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status}));const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done);const showOverdueBar=sameDay(d,today)&&openOverdueToday;const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${events.slice(0,3).map(e=>`<div class="month-event" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${escapeHtml(shortText(e.summary,38))}</div>`).join('')}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;}html+='</div>';root.innerHTML=html;$('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};$('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};$$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});}function collectSearchItems(){
   const items=[];
   (state.tasks||[]).forEach(t=>items.push({type:'Task',title:t.title||'',date:t.date||fmtDate(new Date()),meta:t.note||'Tagestask'}));
   (state.longterm||[]).forEach(t=>items.push({type:'Langfristig',title:t.title||'',date:t.createdDate||fmtDate(new Date()),meta:t.note||'Langfristiger Task'}));
@@ -628,22 +544,7 @@ function ensureRev033State(){
   }
 }
 const __oldEnsureSettings=ensureSettings;
-ensureSettings=function(){__oldEnsureSettings();ensureRev033State();};
-function snapshotCurrentVisibility(name){
-  const cal={}, ics={}, task={}, lng={};
-  (state.calendars||[]).forEach((c,i)=>{cal[c.name||('cal_'+i)]=c.visible!==false;(c.links||[]).forEach(l=>ics[l.id||l.name]=l.visible!==false);});
-  (state.taskColumns||[]).forEach(c=>task[c.id]=c.visible!==false);
-  (state.longColumns||[]).forEach(c=>lng[c.id]=c.visible!==false);
-  return {id:makeId('mode'),name,calendarVisible:cal,icsVisible:ics,taskVisible:task,longVisible:lng};
-}
-function applyViewMode(id){
-  const mode=(state.viewModes||[]).find(m=>m.id===id); if(!mode)return;
-  (state.calendars||[]).forEach((c,i)=>{const key=c.name||('cal_'+i); if(Object.prototype.hasOwnProperty.call(mode.calendarVisible||{},key))c.visible=!!mode.calendarVisible[key]; (c.links||[]).forEach(l=>{const lkey=l.id||l.name; if(Object.prototype.hasOwnProperty.call(mode.icsVisible||{},lkey))l.visible=!!mode.icsVisible[lkey];});});
-  (state.taskColumns||[]).forEach(c=>{if(Object.prototype.hasOwnProperty.call(mode.taskVisible||{},c.id))c.visible=!!mode.taskVisible[c.id];});
-  (state.longColumns||[]).forEach(c=>{if(Object.prototype.hasOwnProperty.call(mode.longVisible||{},c.id))c.visible=!!mode.longVisible[c.id];});
-  state.activeViewMode=id;
-}
-function renderViewModeSelect(){
+ensureSettings=function(){__oldEnsureSettings();ensureRev033State();};function renderViewModeSelect(){
   ensureRev033State(); const sel=$('#viewModeSelect'); if(!sel)return;
   sel.innerHTML='<option value="">Kein Modus</option>'+state.viewModes.map(m=>`<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('')+'<option value="__new__">+ Neuer Modus hinzufügen</option>';
   sel.value=state.activeViewMode||'';
@@ -662,44 +563,7 @@ function renderViewModeSelect(){
     openViewModeConfigModal(state.activeViewMode);
   };
 }
-function modeCheckbox(label,checked,attrs,extraClass=''){return `<label class="mode-check ${extraClass}"><span title="${escapeHtml(label)}">${escapeHtml(label)}</span><input type="checkbox" ${checked?'checked':''} ${attrs}></label>`;}
-function openViewModeConfigModal(id){
-  if(!requireLogin())return; ensureRev033State();
-  const mode=(state.viewModes||[]).find(m=>m.id===id); if(!mode)return;
-  const calHtml=(state.calendars||[]).map((c,i)=>{
-    const calKey=c.name||('cal_'+i);
-    const checked=Object.prototype.hasOwnProperty.call(mode.calendarVisible||{},calKey)?!!mode.calendarVisible[calKey]:c.visible!==false;
-    const links=(c.links||[]).map(l=>{
-      const lkey=l.id||l.name;
-      const lchecked=Object.prototype.hasOwnProperty.call(mode.icsVisible||{},lkey)?!!mode.icsVisible[lkey]:l.visible!==false;
-      return modeCheckbox((l.name||'Kalenderquelle'),lchecked,`data-mode-ics="${escapeHtml(lkey)}"`,'child');
-    }).join('');
-    return `<div class="mode-config-subtitle">${escapeHtml(c.name||('Kalender '+(i+1)))}</div>${modeCheckbox('Kalender anzeigen',checked,`data-mode-cal="${escapeHtml(calKey)}"`)}${links||'<div class="hint">Keine Quellen.</div>'}`;
-  }).join('');
-  const taskHtml=(state.taskColumns||[]).map(c=>modeCheckbox(c.name,c.visible!==false,`data-mode-task="${escapeHtml(c.id)}"`)).join('')||'<div class="hint">Keine Tagestask-Gruppen.</div>';
-  const longHtml=(state.longColumns||[]).map(c=>modeCheckbox(c.name,c.visible!==false,`data-mode-long="${escapeHtml(c.id)}"`)).join('')||'<div class="hint">Keine Langfrist-Gruppen.</div>';
-  $('#modalTitle').textContent='Modus konfigurieren';
-  $('#modalContent').innerHTML=`<div class="edit-grid"><label>Name des Modus</label><input id="modeNameInput" value="${escapeHtml(mode.name)}"><div class="mode-config-list"><div class="mode-config-section"><div class="mode-config-section-title">Kalender und ICS-Links</div><div class="mode-config-grid">${calHtml}</div></div><div class="mode-config-section"><div class="mode-config-section-title">Tagestask-Gruppen</div><div class="mode-config-grid">${taskHtml}</div></div><div class="mode-config-section"><div class="mode-config-section-title">Langfristige Task-Gruppen</div><div class="mode-config-grid">${longHtml}</div></div></div></div>`;
-  $('#modalBackdrop').style.display='flex'; $('#saveModal').style.display='';
-  $('#saveModal').onclick=()=>{
-    mode.name=$('#modeNameInput').value.trim()||mode.name||'Modus'; mode.calendarVisible={}; mode.icsVisible={}; mode.taskVisible={}; mode.longVisible={};
-    $$('[data-mode-cal]').forEach(x=>mode.calendarVisible[x.dataset.modeCal]=x.checked);
-    $$('[data-mode-ics]').forEach(x=>mode.icsVisible[x.dataset.modeIcs]=x.checked);
-    $$('[data-mode-task]').forEach(x=>mode.taskVisible[x.dataset.modeTask]=x.checked);
-    $$('[data-mode-long]').forEach(x=>mode.longVisible[x.dataset.modeLong]=x.checked);
-    state.activeViewMode=mode.id; applyViewMode(mode.id); closeModal(); render(); toast('Modus gespeichert.');
-  };
-}
-
-function renderLongColumnConfig(){
-  const root=$('#longColumnConfig'); if(!root)return; ensureRev033State();
-  root.innerHTML=state.longColumns.map((col,idx)=>`<div class="taskcol-item ${col.visible===false?'hidden-col':''}"><div class="taskcol-main"><span class="ics-color-dot" style="background:${escapeHtml(col.color)}"></span><b title="${escapeHtml(col.name)}">${escapeHtml(col.name)}</b></div><div class="taskcol-actions"><button class="btn small ui-icon-btn visibility-btn" data-toggle-longcol="${idx}" title="${col.visible===false?'Einblenden':'Ausblenden'}">${iconEye(col.visible!==false)}</button><button class="btn small ui-icon-btn" data-edit-longcol="${idx}" title="Gruppe bearbeiten">${iconSettings()}</button><button class="btn small ui-icon-btn trash-unified" data-delete-longcol="${idx}" title="Gruppe löschen">${iconTrash()}</button></div></div>`).join('')+`<div class="add-calendar-box"><div><b>Langfristige Gruppe hinzufügen</b><div class="hint">Gruppen für langfristige Tasks, z. B. Allgemein, Geschäftlich.</div></div><button class="btn primary small" id="addLongColumnBtn">${iconPlus()} Gruppe</button></div>`;
-  $$('[data-toggle-longcol]').forEach(b=>b.onclick=()=>{if(!requireLogin())return;const c=state.longColumns[Number(b.dataset.toggleLongcol)];c.visible=c.visible===false;render();});
-  $$('[data-edit-longcol]').forEach(b=>b.onclick=()=>{if(requireLogin())openLongColumnModal(Number(b.dataset.editLongcol));});
-  $$('[data-delete-longcol]').forEach(b=>b.onclick=()=>{if(!requireLogin())return;const idx=Number(b.dataset.deleteLongcol);if(state.longColumns.length<=1)return toast('Mindestens eine langfristige Gruppe bleibt erhalten.');const col=state.longColumns[idx];if(!confirm('Langfristige Gruppe löschen? Bestehende Tasks werden in die erste verfügbare Gruppe verschoben.'))return;const fallback=state.longColumns.find((_,i)=>i!==idx)?.id;state.longterm.forEach(t=>{if(t.columnId===col.id)t.columnId=fallback;});state.longColumns.splice(idx,1);render();});
-  const add=$('#addLongColumnBtn'); if(add)add.onclick=()=>{if(requireLogin())openLongColumnModal(null);};
-}
-function openLongColumnModal(idx){
+function modeCheckbox(label,checked,attrs,extraClass=''){return `<label class="mode-check ${extraClass}"><span title="${escapeHtml(label)}">${escapeHtml(label)}</span><input type="checkbox" ${checked?'checked':''} ${attrs}></label>`;}function openLongColumnModal(idx){
   const isNew=idx===null||idx===undefined; ensureRev033State();
   const col=isNew?{name:'',color:state.colors.long||defaultColors.long,visible:true}:state.longColumns[idx]; const current=col.color||state.colors.long;
   openModal(isNew?'Langfristige Gruppe hinzufügen':'Langfristige Gruppe bearbeiten',`<input id="mLongColName" value="${escapeHtml(col.name||'')}" placeholder="Name, z. B. Geschäftlich"><div class="color-palette" data-longcol-color-picker>${palette.map(c=>`<button type="button" class="color-choice ${c.toLowerCase()===String(current).toLowerCase()?'active':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>`,()=>{const name=$('#mLongColName').value.trim()||'Neue Gruppe';if(isNew)state.longColumns.push({id:makeId('lg'),name,color:col.color||current,visible:true});else col.name=name;});
@@ -735,14 +599,6 @@ function openTaskDetailModal(ref){
   };
   $('#modalContent').onkeydown=e=>{if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();$('#saveModal').click();}else if(e.key==='Enter'&&e.ctrlKey){e.preventDefault();$('#saveModal').click();}};
 }
-function initConfigBlocks(){
-  $$('.config-toggle').forEach(btn=>{btn.onclick=()=>{const block=btn.closest('.config-block');if(!block)return;block.classList.toggle('collapsed');const chev=block.querySelector('.config-chevron');if(chev)chev.innerHTML=block.classList.contains('collapsed')?iconChevronRight():iconChevronDown();};});
-}
-function updateSidebarToggle(){const collapsed=document.body.classList.contains('sidebar-collapsed');const btn=document.querySelector('#sidebarToggleBtn');if(!btn)return;btn.innerHTML=`<span class="sidebar-toggle-tab">${collapsed?'›':'‹'}</span>`;btn.title=collapsed?'Seitenleiste aufklappen':'Seitenleiste einklappen';}
-function initSidebarToggle(){const saved=localStorage.getItem('kalender_sidebar_collapsed')==='1';document.body.classList.toggle('sidebar-collapsed',saved);updateSidebarToggle();const btn=document.querySelector('#sidebarToggleBtn');if(btn)btn.onclick=()=>{document.body.classList.toggle('sidebar-collapsed');localStorage.setItem('kalender_sidebar_collapsed',document.body.classList.contains('sidebar-collapsed')?'1':'0');updateSidebarToggle();};}
-
-
-
 /* Rev 037: Frontend-State-Persistenz und UI-Logik ohne neue Supabase-Tabellen */
 const __rev037EnsureSettings=ensureSettings;
 ensureSettings=function(){
@@ -876,19 +732,7 @@ function applyViewMode(id){
   (state.taskColumns||[]).forEach(c=>{if(Object.prototype.hasOwnProperty.call(mode.taskVisible||{},c.id))c.visible=!!mode.taskVisible[c.id];});
   (state.longColumns||[]).forEach(c=>{if(Object.prototype.hasOwnProperty.call(mode.longVisible||{},c.id))c.visible=!!mode.longVisible[c.id];});
   state.activeViewMode=id;
-}
-function syncModeChildrenInModal(){
-  $$('[data-mode-cal]').forEach(parent=>{
-    const section=parent.closest('.mode-config-calgroup');
-    if(!section)return;
-    section.querySelectorAll('[data-mode-ics]').forEach(child=>{
-      if(!parent.checked)child.checked=false;
-      child.disabled=!parent.checked;
-      child.closest('.mode-check')?.classList.toggle('disabled-child',!parent.checked);
-    });
-  });
-}
-function openViewModeConfigModal(id){
+}function openViewModeConfigModal(id){
   if(!requireLogin())return; ensureRev033State();
   const mode=(state.viewModes||[]).find(m=>m.id===id); if(!mode)return;
   const calHtml=(state.calendars||[]).map((c,i)=>{
