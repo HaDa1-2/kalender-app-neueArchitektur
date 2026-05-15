@@ -6908,3 +6908,92 @@ dayCard=function(date){
   window.KalenderDatabaseSafety={runDatabasePreflight,canWriteToDatabase,getDatabaseEnvironment,getDatabaseLabel,dbRefFromUrl};
   setTimeout(renderDatabaseBadge,0);
 })();
+
+/* Rev 087: Pending-Write-Guard für sofortiges Neuladen nach Task-Änderungen
+   Problem: Checkbox-Änderungen schreiben asynchron in Supabase. Wenn direkt danach
+   der Datenbank-Reload gedrückt wird, kann der Reload den alten DB-Stand lesen.
+   Lösung: relevante DB-Updates werden registriert; Reload wartet vorher darauf. */
+(function(){
+  const pendingWrites=new Set();
+
+  function trackWrite(promise,label){
+    if(!promise||typeof promise.then!=='function')return promise;
+    const wrapped=Promise.resolve(promise).catch(error=>{throw error;}).finally(()=>pendingWrites.delete(wrapped));
+    wrapped._label=label||'write';
+    pendingWrites.add(wrapped);
+    return wrapped;
+  }
+
+  async function flushPendingWritesRev087(){
+    if(!pendingWrites.size)return;
+    const snapshot=Array.from(pendingWrites);
+    try{
+      await Promise.allSettled(snapshot);
+    }finally{
+      if(pendingWrites.size){
+        await Promise.allSettled(Array.from(pendingWrites));
+      }
+    }
+  }
+
+  function bindReloadGuardRev087(fn){
+    if(typeof fn!=='function')return fn;
+    return async function(){
+      await flushPendingWritesRev087();
+      return fn.apply(this,arguments);
+    };
+  }
+
+  if(typeof updateTaskRev043==='function'){
+    const previousUpdateTaskRev043=updateTaskRev043;
+    updateTaskRev043=function(id,patch){
+      return trackWrite(previousUpdateTaskRev043.apply(this,arguments),'task:update');
+    };
+    window.updateTaskRev043=updateTaskRev043;
+  }
+
+  if(typeof updateLongTaskRev043==='function'){
+    const previousUpdateLongTaskRev043=updateLongTaskRev043;
+    updateLongTaskRev043=function(id,patch){
+      return trackWrite(previousUpdateLongTaskRev043.apply(this,arguments),'long-task:update');
+    };
+    window.updateLongTaskRev043=updateLongTaskRev043;
+  }
+
+  if(typeof updateProjectTaskRev047==='function'){
+    const previousUpdateProjectTaskRev047=updateProjectTaskRev047;
+    updateProjectTaskRev047=function(id,patch){
+      return trackWrite(previousUpdateProjectTaskRev047.apply(this,arguments),'project-task:update');
+    };
+    window.updateProjectTaskRev047=updateProjectTaskRev047;
+  }
+
+  if(typeof dbDeleteRowRev041==='function'){
+    const previousDbDeleteRowRev041=dbDeleteRowRev041;
+    dbDeleteRowRev041=function(table,id){
+      return trackWrite(previousDbDeleteRowRev041.apply(this,arguments),'delete:'+table);
+    };
+    window.dbDeleteRowRev041=dbDeleteRowRev041;
+  }
+
+  if(typeof reloadDatabaseDataRev044==='function'){
+    reloadDatabaseDataRev044=bindReloadGuardRev087(reloadDatabaseDataRev044);
+    window.reloadDatabaseDataRev044=reloadDatabaseDataRev044;
+  }
+
+  if(typeof loadStateFromCloud==='function'){
+    const previousLoadStateFromCloud=loadStateFromCloud;
+    loadStateFromCloud=async function(){
+      await flushPendingWritesRev087();
+      return previousLoadStateFromCloud.apply(this,arguments);
+    };
+    window.loadStateFromCloud=loadStateFromCloud;
+  }
+
+  setTimeout(()=>{
+    const btn=document.querySelector('#reloadDbBtn');
+    if(btn&&typeof reloadDatabaseDataRev044==='function')btn.onclick=reloadDatabaseDataRev044;
+  },0);
+
+  window.KalenderPendingWrites={flush:flushPendingWritesRev087,count:()=>pendingWrites.size};
+})();

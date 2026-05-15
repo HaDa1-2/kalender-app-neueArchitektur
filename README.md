@@ -74,3 +74,37 @@ Wichtig:
 Nicht umgesetzt:
 - Keine automatische Datenmigration von Test nach Produktiv.
 - Keine Änderung an Tabellenstruktur, RLS-Policies oder Edge-Function-Code.
+
+## Revision 087 – Pending-Write-Guard für Datenbank-Reload
+
+Basis: stabile Revision 086 Production DB.
+
+Fehlerbild:
+- Ein überzogener Tagestask wurde abgehakt.
+- Direkt danach wurde „Daten aus Datenbanken neu laden“ gedrückt.
+- Dadurch konnte der Reload schneller sein als das laufende Supabase-UPDATE.
+- Ergebnis: Der Task erschien gleichzeitig unter „Überzogene Tasks“ und „An diesem Tag erledigte Tasks“.
+
+Änderungen:
+- Laufende Schreibvorgänge für Tagestasks werden registriert.
+- Laufende Schreibvorgänge für langfristige Tasks und Projekt-Tasks werden ebenfalls registriert.
+- Löschvorgänge über `dbDeleteRowRev041` werden ebenfalls registriert.
+- Der grüne Reload-Button wartet jetzt auf offene Schreibvorgänge, bevor Daten aus Supabase neu geladen werden.
+- `loadStateFromCloud` wartet ebenfalls auf offene Schreibvorgänge, damit interne Reloads konsistent bleiben.
+
+Geänderte Dateien:
+- `js/app.js`
+- `package.json`
+- `README.md`
+
+Nicht umgesetzt:
+- Keine Änderung an Tabellenstruktur, RLS-Policies oder Supabase-Konfiguration.
+- Keine Änderung an der Darstellung der erledigten Tasks.
+- Keine aggressive Code-Bereinigung in dieser Revision, weil es sich um eine gezielte Stabilitätskorrektur handelt.
+
+Prüfung:
+- `node --check js/app.js` erfolgreich.
+- `node --check js/core/config.js` erfolgreich.
+- `node --check js/core/utils.js` erfolgreich.
+- `node --check js/core/ics-parser.js` erfolgreich.
+- `node --check js/ui/icons.js` erfolgreich.

@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev086-production-db",
-  "version": "0.86.0",
+  "name": "kalender-app-rev087-pending-write-guard",
+  "version": "0.87.0",
   "private": true,
-  "description": "Revision 086: scharfe Supabase-Datenbank aktiviert",
+  "description": "Revision 087: Reload wartet auf laufende Task-Schreibvorgänge",
   "scripts": {
     "start": "vercel dev"
   }
