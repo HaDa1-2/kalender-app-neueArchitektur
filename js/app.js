@@ -528,10 +528,15 @@ function updateCollapseAllButton(){
 }
 function initConfigBlocks(){
   ensureSettings();
-  // Rev040 Fix: globaler Einklapp-Button steht statisch oben in der Seitenleiste, nicht unter Ansicht konfigurieren.
+  // Rev089: Beim Laden der Website starten alle Seitenleisten-Bereiche standardmäßig eingeklappt.
+  // Manuelles Öffnen während der Sitzung bleibt möglich; beim nächsten Reload wird wieder sauber eingeklappt gestartet.
+  const keys=['view','cal','task','long','opt'];
+  state.configCollapsed=state.configCollapsed||{};
+  keys.forEach(key=>{state.configCollapsed[key]=true;});
+  state.sidebarAllCollapsed=true;
   $$('.config-block').forEach(block=>{
     const key=block.dataset.configBlock;
-    const collapsed=!!state.configCollapsed[key];
+    const collapsed=key?state.configCollapsed[key]!==false:true;
     block.classList.toggle('collapsed',collapsed);
     const chev=block.querySelector('.config-chevron');
     if(chev)chev.innerHTML=collapsed?iconChevronRight():iconChevronDown();
@@ -6835,19 +6840,27 @@ dayCard=function(date){
   function renderDatabaseBadge(){
     const top=document.querySelector('.top-title');
     if(!top)return;
+    const result=runDatabasePreflight();
     let badge=document.querySelector('#databaseEnvBadge');
+    if(!result.errors.length&&!result.warnings.length){
+      if(badge)badge.remove();
+      return;
+    }
     if(!badge){
-      badge=document.createElement('div');
+      badge=document.createElement('button');
+      badge.type='button';
       badge.id='databaseEnvBadge';
       badge.className='database-env-badge';
       top.appendChild(badge);
     }
-    const result=runDatabasePreflight();
     const env=getDatabaseEnvironment();
     badge.classList.toggle('prod',env==='production'||env==='prod'||env==='scharf');
     badge.classList.toggle('bad',result.errors.length>0);
-    badge.textContent=`${getDatabaseLabel()} · ${dbRefFromUrl(cfg.SUPABASE_URL)||'unbekannt'} · ${result.errors.length?'prüfen':'bereit'}`;
+    badge.textContent=`${getDatabaseLabel()} · ${dbRefFromUrl(cfg.SUPABASE_URL)||'unbekannt'} · ${result.errors.length?'prüfen':'Warnung'}`;
     badge.title=[result.summary,...result.errors,...result.warnings].join('\n');
+    badge.onclick=()=>{
+      if(typeof openSyncSettingsModal==='function')openSyncSettingsModal();
+    };
   }
   function safetyPanelHtml(){
     const result=runDatabasePreflight();
@@ -6865,8 +6878,13 @@ dayCard=function(date){
   }
   function appendSafetyPanelToModal(){
     const content=document.querySelector('#modalContent');
-    if(!content||content.querySelector('.db-safety-panel'))return;
-    content.insertAdjacentHTML('beforeend',safetyPanelHtml());
+    if(!content||content.querySelector('.db-safety-panel')||content.querySelector('#dbSafetyToggleRev089'))return;
+    content.insertAdjacentHTML('beforeend',`<div class="db-safety-collapsible"><button class="btn small" id="dbSafetyToggleRev089" type="button">Datenbankprüfung anzeigen</button><div id="dbSafetyPanelWrapRev089" style="display:none">${safetyPanelHtml()}</div></div>`);
+    const btn=document.querySelector('#dbSafetyToggleRev089');
+    const wrap=document.querySelector('#dbSafetyPanelWrapRev089');
+    if(btn&&wrap){
+      btn.onclick=()=>{const open=wrap.style.display!=='none';wrap.style.display=open?'none':'block';btn.textContent=open?'Datenbankprüfung anzeigen':'Datenbankprüfung ausblenden';};
+    }
   }
   if(typeof saveStateToCloud==='function'){
     const previousSaveStateToCloud=saveStateToCloud;
@@ -6908,6 +6926,8 @@ dayCard=function(date){
   window.KalenderDatabaseSafety={runDatabasePreflight,canWriteToDatabase,getDatabaseEnvironment,getDatabaseLabel,dbRefFromUrl};
   setTimeout(renderDatabaseBadge,0);
 })();
+
+/* Rev 089: Permanente DB-OK-Anzeige entfernt; Sicherheitsdetails bleiben im Login-/Einstellungsmodal abrufbar. */
 
 /* Rev 087: Pending-Write-Guard für sofortiges Neuladen nach Task-Änderungen
    Problem: Checkbox-Änderungen schreiben asynchron in Supabase. Wenn direkt danach

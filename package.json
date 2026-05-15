@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev088-task-completion-fix",
-  "version": "0.88.0",
+  "name": "kalender-app-rev089-ui-defaults-source-note",
+  "version": "0.89.0",
   "private": true,
-  "description": "Revision 088: idempotente Task-Erledigung und Dublettenbereinigung für completed_tasks",
+  "description": "Revision 089: Datenbank-Badge nur bei Warnung/Fehler, Seitenleistenbereiche standardmäßig eingeklappt, Hinweis zur Code-Sichtbarkeit",
   "scripts": {
     "start": "vercel dev"
   }

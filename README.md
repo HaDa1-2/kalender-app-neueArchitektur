@@ -123,3 +123,17 @@ Prüfung:
 Nicht umgesetzt:
 - Keine Änderung an Tabellenstruktur, RLS-Policies oder Supabase-Konfiguration.
 - Keine automatische Löschung aktiver Tasks ohne vorher vorhandenen Erledigt-Eintrag.
+
+
+## Revision 089
+
+Änderungen:
+- Die Datenbank-Umgebungsanzeige wird nicht mehr dauerhaft eingeblendet, wenn die Prüfung ohne Warnung oder Fehler bestanden ist.
+- Bei Warnungen oder Blockern erscheint weiterhin ein kleiner Datenbank-Hinweis im Kopfbereich.
+- Die ausführliche Datenbankprüfung bleibt im Login- und Einstellungsdialog abrufbar, startet dort aber eingeklappt.
+- Beim Laden oder Neuladen der Website starten alle Bereiche der linken Seitenleiste standardmäßig eingeklappt.
+- Dokumentation zur Sichtbarkeit von Frontend-Code ergänzt.
+
+Nicht umgesetzt:
+- Kein Versuch, den Frontend-Code im Browser vollständig zu verstecken. Das ist technisch nicht möglich, weil HTML, CSS und JavaScript an den Browser ausgeliefert werden müssen.
+- Keine Minifizierung/Obfuskation in dieser Revision, weil das die Fehlersuche aktuell erschweren würde und keinen echten Schutz bietet.
