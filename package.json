@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev085-cleanup3",
-  "version": "0.85.0",
+  "name": "kalender-app-rev084-cleanup2",
+  "version": "0.84.0",
   "private": true,
-  "description": "Revision 085: weitere risikoarme Verschlankung alter Monats- und Hilfslogik",
+  "description": "Revision 084: weitere sichere Altblock-Bereinigung in js/app.js",
   "scripts": {
     "start": "vercel dev"
   }
