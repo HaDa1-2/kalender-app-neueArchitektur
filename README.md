@@ -51,3 +51,26 @@ In `js/core/config.js` müssen beim späteren Wechsel alle produktiven Werte gem
 - `node --check js/core/utils.js` erfolgreich.
 - `node --check js/core/ics-parser.js` erfolgreich.
 - `node --check js/ui/icons.js` erfolgreich.
+
+
+## Revision 086 – Scharfe Datenbank aktiviert
+
+Basis: stabile Revision 085 DB Safety.
+
+Änderungen:
+- Supabase-URL auf die scharfe Datenbank `ihvhghzbhrujtkgkyhdi` umgestellt.
+- Publishable/Anon-Key auf die scharfe Datenbank umgestellt.
+- ICS-Proxy-URL auf die Edge Function der scharfen Datenbank umgestellt.
+- `DATABASE_ENVIRONMENT` auf `production` gesetzt.
+- `DATABASE_LABEL` auf `Scharfe Datenbank` gesetzt.
+- `DATABASE_SWITCH_LOCK` deaktiviert, damit die App bewusst in die Produktivdatenbank schreiben darf.
+- LocalStorage-Key auf die Produktivdatenbank getrennt: `kalender_rev_086_ihvhghzbhrujtkgkyhdi_production_login_gate`.
+
+Wichtig:
+- Die alte Testdatenbank wird durch diese Revision nicht mehr angesprochen.
+- Bestehende lokale Testdaten werden durch den neuen LocalStorage-Key nicht automatisch in die scharfe Datenbank übernommen.
+- Nach Deployment zuerst Login, Reload, Kalenderquelle, eigener Termin, Tagestask und langfristiger Task prüfen.
+
+Nicht umgesetzt:
+- Keine automatische Datenmigration von Test nach Produktiv.
+- Keine Änderung an Tabellenstruktur, RLS-Policies oder Edge-Function-Code.
