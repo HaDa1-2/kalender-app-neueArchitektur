@@ -1,32 +1,53 @@
-# Kalender App – Revision 084 Cleanup 2
+# Kalender App – Revision 085 DB Safety
 
-Ausgangsbasis: Revision 083 Cleanup.
+Ausgangsbasis: funktionierende Revision 084 Cleanup 2.
 
 ## Ziel dieser Revision
 
-Weitere Verschlankung des Hauptcodes ohne Änderung an Datenbankstruktur, Supabase-Tabellen, Speicherlogik oder ICS-Proxy.
+Vorbereitung auf den Wechsel von Testdatenbank auf scharfe Supabase-Datenbank, ohne die bestehende Fachlogik, Renderlogik oder Datenbankstruktur umzubauen.
 
-## Änderungen in Revision 084
+## Änderungen in Revision 085
 
-- Doppelten `Rev 051`-Funktionsblock am Anfang von `js/app.js` entfernt.
-- Die spätere `Rev 051`-Implementierung bleibt erhalten, weil sie in der gewachsenen Override-Kette an der richtigen Position liegt.
-- Zwei alte, nicht mehr referenzierte Alias-Variablen entfernt.
-- Vier alte globale Kompatibilitäts-Exports aus `Rev 056` entfernt, weil sie im Code und im Markup nicht referenziert werden.
-- Keine fachliche Funktion bewusst verändert.
+- Datenbank-Sicherheitslayer in `js/app.js` ergänzt.
+- Sichtbarer Datenbank-Badge im Kopfbereich ergänzt.
+- Cloud-Modal und Einstellungs-Modal zeigen jetzt eine Datenbank-Sicherheitsprüfung.
+- Schreibvorgänge in `app_state` werden blockiert, wenn die Supabase-Konfiguration widersprüchlich ist.
+- `config.js` um klare Datenbank-Umgebungsparameter erweitert:
+  - `APP_REVISION`
+  - `DATABASE_ENVIRONMENT`
+  - `DATABASE_LABEL`
+  - `DATABASE_SWITCH_LOCK`
+  - `EXPECTED_SUPABASE_REF`
+  - `REQUIRE_PRODUCTION_CONFIRMATION`
+  - `PRODUCTION_SWITCH_NOTE`
+- Lokaler Speicher-Key wurde datenbankbezogen gemacht, damit Test- und Produktivumgebung nicht denselben LocalStorage-Zwischenstand verwenden.
+- CSS für Datenbank-Badge und Sicherheitspanel ergänzt.
+- Dokument `docs/supabase_production_checklist.md` ergänzt.
 
 ## Geänderte Dateien
 
+- `js/core/config.js`
 - `js/app.js`
+- `css/styles.css`
 - `package.json`
 - `README.md`
+- `docs/supabase_production_checklist.md`
 
 ## Nicht umgesetzt
 
-- Keine Entfernung kompletter späterer Rev-Blöcke wie Rev 033 bis Rev 078. Diese Blöcke sind trotz alter Nummern Teil der aktuellen Override-Kette und greifen in Render-, Speicher-, Projekt-, Zeitstrahl- oder Monatslogik ein.
-- Keine CSS-Bereinigung. Die CSS-Datei enthält viele alte Revisionskommentare, aber spätere Regeln überschreiben frühere Regeln bewusst. Eine aggressive Entfernung wäre aktuell zu riskant.
-- Keine Änderung an Supabase, RLS, Tabellen, Edge Function oder Login-Verhalten.
+- Die Supabase-Zugangsdaten wurden noch nicht auf die scharfe Datenbank umgestellt, weil die Produktiv-URL und der Produktiv-Anon-Key nicht in dieser Revision vorliegen.
+- Keine automatische Migration von Testdaten in die scharfe Datenbank.
+- Keine aggressive Bereinigung alter CSS- oder JS-Blöcke.
+- Keine Änderung an Tabellenstruktur, RLS-Policies oder Edge Function Deployment direkt in Supabase.
+
+## Umschaltung auf scharfe Datenbank
+
+In `js/core/config.js` müssen beim späteren Wechsel alle produktiven Werte gemeinsam angepasst werden. Danach muss `DATABASE_SWITCH_LOCK` bewusst auf `false` gesetzt werden. Solange der Lock aktiv ist und die Umgebung als Produktivdatenbank markiert wird, blockiert die App Schreibvorgänge in `app_state`.
 
 ## Prüfung
 
 - `node --check js/app.js` erfolgreich.
-- `node --check` für `js/core/config.js`, `js/core/utils.js`, `js/core/ics-parser.js` und `js/ui/icons.js` erfolgreich.
+- `node --check js/core/config.js` erfolgreich.
+- `node --check js/core/utils.js` erfolgreich.
+- `node --check js/core/ics-parser.js` erfolgreich.
+- `node --check js/ui/icons.js` erfolgreich.

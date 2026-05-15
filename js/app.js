@@ -6769,3 +6769,142 @@ dayCard=function(date){
     window.closeModal=closeModal=function(){const r=oldClose.apply(this,arguments);const modal=q('#modalBackdrop .modal');if(modal)modal.classList.remove('month-modal-wide','month-modal-rev078');return r;};
   }
 })();
+
+/* Rev 085: Sicherheitslayer für Umschaltung Testdatenbank / scharfe Datenbank.
+   Ziel: keine Fachlogik ändern, sondern Umgebung sichtbar machen und Fehlkonfigurationen blockieren. */
+(function(){
+  const cfg=window.KalenderConfig||{};
+  const safetyState={checked:false,errors:[],warnings:[],summary:''};
+  function dbRefFromUrl(url){
+    const m=String(url||'').match(/https?:\/\/([a-z0-9-]+)\.supabase\.co/i);
+    return m?m[1]:'';
+  }
+  function decodeAnonPayload(token){
+    try{
+      const part=String(token||'').split('.')[1];
+      if(!part)return null;
+      const normalized=part.replace(/-/g,'+').replace(/_/g,'/');
+      const json=decodeURIComponent(atob(normalized).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+      return JSON.parse(json);
+    }catch(_){return null;}
+  }
+  function getDatabaseEnvironment(){
+    return String(cfg.DATABASE_ENVIRONMENT||'unknown').toLowerCase();
+  }
+  function getDatabaseLabel(){
+    const env=getDatabaseEnvironment();
+    return cfg.DATABASE_LABEL||((env==='production'||env==='prod')?'Scharfe Datenbank':'Test-Datenbank');
+  }
+  function runDatabasePreflight(){
+    const errors=[];const warnings=[];
+    const urlRef=dbRefFromUrl(cfg.SUPABASE_URL);
+    const proxyRef=dbRefFromUrl(cfg.DEFAULT_PROXY_URL);
+    const expected=String(cfg.EXPECTED_SUPABASE_REF||'').trim();
+    const anon=decodeAnonPayload(cfg.SUPABASE_ANON_KEY);
+    const anonRef=anon?.ref||'';
+    if(!cfg.SUPABASE_URL)errors.push('Supabase-URL fehlt.');
+    if(!cfg.SUPABASE_ANON_KEY)errors.push('Supabase-Anon-Key fehlt.');
+    if(!cfg.DEFAULT_PROXY_URL)warnings.push('Proxy-URL fehlt. ICS-Links können ausfallen.');
+    if(expected&&urlRef&&urlRef!==expected)errors.push(`Supabase-URL zeigt auf ${urlRef}, erwartet ist ${expected}.`);
+    if(expected&&anonRef&&anonRef!==expected)errors.push(`Anon-Key gehört zu ${anonRef}, erwartet ist ${expected}.`);
+    if(expected&&proxyRef&&proxyRef!==expected)errors.push(`ICS-Proxy zeigt auf ${proxyRef}, erwartet ist ${expected}.`);
+    if(!expected)warnings.push('EXPECTED_SUPABASE_REF ist nicht gesetzt. Datenbankziel kann nicht eindeutig gegengeprüft werden.');
+    const required=['appState','calendarGroups','calendarSources','taskGroups','tasks','longTaskGroups','longTasks','ownEvents'];
+    required.forEach(k=>{if(!cfg.DB_TABLES||!cfg.DB_TABLES[k])errors.push(`Tabellenname fehlt in DB_TABLES: ${k}.`);});
+    const env=getDatabaseEnvironment();
+    if((env==='production'||env==='prod'||env==='scharf')&&cfg.DATABASE_SWITCH_LOCK===true){
+      errors.push('Produktivdatenbank ist in config.js markiert, aber DATABASE_SWITCH_LOCK ist noch aktiv. Für den bewussten Wechsel auf false setzen.');
+    }
+    if((env==='production'||env==='prod'||env==='scharf')&&!String(cfg.STORE_KEY||'').includes(expected)){
+      warnings.push('STORE_KEY enthält den erwarteten Datenbank-Ref nicht. Lokale Testdaten könnten sich mit Produktivdaten mischen.');
+    }
+    safetyState.checked=true;safetyState.errors=errors;safetyState.warnings=warnings;
+    safetyState.summary=errors.length?`Datenbankprüfung blockiert: ${errors.length} Problem(e).`:(warnings.length?`Datenbankprüfung bestanden mit ${warnings.length} Warnung(en).`:'Datenbankprüfung bestanden.');
+    return safetyState;
+  }
+  function canWriteToDatabase(){
+    const result=runDatabasePreflight();
+    if(result.errors.length){
+      const msg=result.summary+' '+result.errors.join(' ');
+      if(typeof setCloudStatus==='function')setCloudStatus(msg,'bad');
+      if(typeof toast==='function')toast(msg);
+      return false;
+    }
+    return true;
+  }
+  function renderDatabaseBadge(){
+    const top=document.querySelector('.top-title');
+    if(!top)return;
+    let badge=document.querySelector('#databaseEnvBadge');
+    if(!badge){
+      badge=document.createElement('div');
+      badge.id='databaseEnvBadge';
+      badge.className='database-env-badge';
+      top.appendChild(badge);
+    }
+    const result=runDatabasePreflight();
+    const env=getDatabaseEnvironment();
+    badge.classList.toggle('prod',env==='production'||env==='prod'||env==='scharf');
+    badge.classList.toggle('bad',result.errors.length>0);
+    badge.textContent=`${getDatabaseLabel()} · ${dbRefFromUrl(cfg.SUPABASE_URL)||'unbekannt'} · ${result.errors.length?'prüfen':'bereit'}`;
+    badge.title=[result.summary,...result.errors,...result.warnings].join('\n');
+  }
+  function safetyPanelHtml(){
+    const result=runDatabasePreflight();
+    const ok=!result.errors.length;
+    const lines=[
+      ['Umgebung',getDatabaseLabel()],
+      ['Supabase-Ref',dbRefFromUrl(cfg.SUPABASE_URL)||'—'],
+      ['Anon-Key-Ref',decodeAnonPayload(cfg.SUPABASE_ANON_KEY)?.ref||'—'],
+      ['Proxy-Ref',dbRefFromUrl(cfg.DEFAULT_PROXY_URL)||'—'],
+      ['Lokaler Speicher',cfg.STORE_KEY||'—'],
+      ['Schreibschutz',cfg.DATABASE_SWITCH_LOCK?'aktiv':'nicht aktiv']
+    ];
+    const problems=[...result.errors.map(x=>'BLOCKER: '+x),...result.warnings.map(x=>'Warnung: '+x)];
+    return `<div class="db-safety-panel ${ok?'ok':'bad'}"><b>Datenbank-Sicherheitsprüfung</b><div class="hint">${escapeHtml(result.summary)}</div><div class="db-safety-grid">${lines.map(([k,v])=>`<span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong>`).join('')}</div>${problems.length?`<div class="db-safety-list">${problems.map(p=>`<div>${escapeHtml(p)}</div>`).join('')}</div>`:'<div class="db-safety-list"><div>Keine Blocker gefunden.</div></div>'}</div>`;
+  }
+  function appendSafetyPanelToModal(){
+    const content=document.querySelector('#modalContent');
+    if(!content||content.querySelector('.db-safety-panel'))return;
+    content.insertAdjacentHTML('beforeend',safetyPanelHtml());
+  }
+  if(typeof saveStateToCloud==='function'){
+    const previousSaveStateToCloud=saveStateToCloud;
+    saveStateToCloud=async function(){
+      if(!canWriteToDatabase())return;
+      return previousSaveStateToCloud.apply(this,arguments);
+    };
+    window.saveStateToCloud=saveStateToCloud;
+  }
+  if(typeof openCloudModal==='function'){
+    const previousOpenCloudModal=openCloudModal;
+    openCloudModal=function(){
+      const result=previousOpenCloudModal.apply(this,arguments);
+      appendSafetyPanelToModal();
+      return result;
+    };
+    window.openCloudModal=openCloudModal;
+    const cloudBtn=document.querySelector('#cloudBtn');if(cloudBtn)cloudBtn.onclick=openCloudModal;
+  }
+  if(typeof openSyncSettingsModal==='function'){
+    const previousOpenSyncSettingsModal=openSyncSettingsModal;
+    openSyncSettingsModal=function(){
+      const result=previousOpenSyncSettingsModal.apply(this,arguments);
+      appendSafetyPanelToModal();
+      return result;
+    };
+    window.openSyncSettingsModal=openSyncSettingsModal;
+    const settingsBtn=document.querySelector('#settingsBtn');if(settingsBtn)settingsBtn.onclick=openSyncSettingsModal;
+  }
+  if(typeof render==='function'){
+    const previousRender=render;
+    render=function(){
+      const result=previousRender.apply(this,arguments);
+      renderDatabaseBadge();
+      return result;
+    };
+    window.render=render;
+  }
+  window.KalenderDatabaseSafety={runDatabasePreflight,canWriteToDatabase,getDatabaseEnvironment,getDatabaseLabel,dbRefFromUrl};
+  setTimeout(renderDatabaseBadge,0);
+})();

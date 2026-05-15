@@ -1,10 +1,17 @@
 // Rev080: zentrale Konfiguration und Default-State.
 // Keine Laufzeitlogik in dieser Datei.
 window.KalenderConfig = {
+  APP_REVISION: '085',
+  DATABASE_ENVIRONMENT: 'test',
+  DATABASE_LABEL: 'Test-Datenbank',
+  DATABASE_SWITCH_LOCK: true,
+  EXPECTED_SUPABASE_REF: 'peikohfbuxmpxhzmxrbj',
+  REQUIRE_PRODUCTION_CONFIRMATION: true,
   SUPABASE_URL: 'https://peikohfbuxmpxhzmxrbj.supabase.co',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlaWtvaGZidXhtcHhoem14cmJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MDA5ODYsImV4cCI6MjA5NDE3Njk4Nn0.KIsmCS19Jiy4DnYLoUyVbKDvJ6hOa_xFCB7CDLQ0vSA',
   DEFAULT_PROXY_URL: 'https://peikohfbuxmpxhzmxrbj.supabase.co/functions/v1/ics-proxy?url=',
-  STORE_KEY: 'kalender_rev_024_login_gate',
+  PRODUCTION_SWITCH_NOTE: 'Vor Umstellung auf die scharfe Datenbank DATABASE_ENVIRONMENT, DATABASE_LABEL, SUPABASE_URL, SUPABASE_ANON_KEY, DEFAULT_PROXY_URL und EXPECTED_SUPABASE_REF gemeinsam anpassen.',
+  STORE_KEY: 'kalender_rev_085_peikohfbuxmpxhzmxrbj_test_login_gate',
   DB_TABLES: {
     appState: 'app_state',
     calendarGroups: 'calendar_groups',

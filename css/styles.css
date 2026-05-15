@@ -1604,3 +1604,16 @@ body.sharp-corners .r75-color-bucket-wrap{border-radius:0!important;}
   align-items:center!important;
   justify-content:center!important;
 }
+
+/* Rev 085: Datenbank-Sicherheitsanzeige für Test-/Produktivumschaltung */
+.database-env-badge{display:inline-flex;align-items:center;margin-top:8px;border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:#07101d;color:#9fb0c8;font-size:12px;font-weight:900;letter-spacing:.01em;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.database-env-badge.prod{background:#2b1520;color:#ffcf7a;border-color:#8a5b1b}
+.database-env-badge.bad{background:#3a111d;color:#ffb4b4;border-color:#8a3045}
+body.light .database-env-badge{background:#f8fbff;border-color:#cbd6e7;color:#42536b}
+body.light .database-env-badge.prod{background:#fff7ed;border-color:#f59e0b;color:#92400e}
+body.light .database-env-badge.bad{background:#fff1f2;border-color:#fb7185;color:#9f1239}
+.db-safety-panel{margin-top:12px;border:1px solid rgba(72,211,139,.45);border-radius:14px;padding:12px;background:rgba(72,211,139,.08);display:grid;gap:8px}
+.db-safety-panel.bad{border-color:rgba(255,80,80,.58);background:rgba(255,80,80,.10)}
+.db-safety-grid{display:grid;grid-template-columns:145px minmax(0,1fr);gap:5px 10px;font-size:12px}
+.db-safety-grid span{color:var(--muted);font-weight:800}.db-safety-grid strong{min-width:0;overflow-wrap:anywhere;font-weight:900}.db-safety-list{display:grid;gap:4px;font-size:12px;color:var(--muted);line-height:1.35}.db-safety-panel.bad .db-safety-list{color:#ffb4b4}
+body.light .db-safety-panel{background:#eefaf4;border-color:#86efac;color:#152033}body.light .db-safety-panel.bad{background:#fff1f2;border-color:#fb7185}body.light .db-safety-panel.bad .db-safety-list{color:#9f1239}
