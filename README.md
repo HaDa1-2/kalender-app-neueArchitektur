@@ -108,3 +108,18 @@ Prüfung:
 - `node --check js/core/utils.js` erfolgreich.
 - `node --check js/core/ics-parser.js` erfolgreich.
 - `node --check js/ui/icons.js` erfolgreich.
+
+
+## Revision 088
+
+Änderungen:
+- Tagestask-Erledigung idempotent gemacht: ein Task kann nicht mehrfach in `completed_tasks` gestapelt werden.
+- Beim Abhaken wird zuerst ein vorhandener Erledigt-Eintrag gesucht; nur wenn keiner existiert, wird ein neuer Verlaufseintrag angelegt.
+- Der Originaltask wird lokal sofort aus den aktiven Tasks entfernt und in Supabase zusätzlich auf `done=true` gesetzt, bevor er gelöscht wird.
+- Falls das Löschen des Originaltasks fehlschlägt, bleibt `done=true` als Schutz bestehen, damit der Task nicht mehr als überzogen angezeigt wird.
+- Bereits vorhandene Dubletten in `completed_tasks` werden beim Laden und Rendern lokal bereinigt; überzählige DB-Zeilen werden best-effort gelöscht.
+- Checkbox-Handler für Tagestasks, langfristige Tasks und Projekt-Tasks werden am Ende der Renderkette eindeutig neu gebunden.
+
+Nicht umgesetzt:
+- Keine Änderung an Tabellenstruktur, RLS-Policies oder Supabase-Konfiguration.
+- Keine automatische Löschung aktiver Tasks ohne vorher vorhandenen Erledigt-Eintrag.

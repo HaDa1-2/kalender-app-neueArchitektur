@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev087-pending-write-guard",
-  "version": "0.87.0",
+  "name": "kalender-app-rev088-task-completion-fix",
+  "version": "0.88.0",
   "private": true,
-  "description": "Revision 087: Reload wartet auf laufende Task-Schreibvorgänge",
+  "description": "Revision 088: idempotente Task-Erledigung und Dublettenbereinigung für completed_tasks",
   "scripts": {
     "start": "vercel dev"
   }

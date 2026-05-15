@@ -6997,3 +6997,233 @@ dayCard=function(date){
 
   window.KalenderPendingWrites={flush:flushPendingWritesRev087,count:()=>pendingWrites.size};
 })();
+
+/* Rev 088: idempotente Task-Erledigung und Dublettenbereinigung
+   Fix: Ein überzogener Task darf nach dem Abhaken nicht gleichzeitig in
+   "Überzogene Tasks" und "An diesem Tag erledigte Tasks" stehen.
+   Zusätzlich werden mehrfach erzeugte completed_tasks-Einträge je Originaltask bereinigt. */
+(function(){
+  const COMPLETED_TABLE_REV88='completed_tasks';
+  const cleanRunning={value:false};
+
+  function esc88(v){return String(v??'');}
+  function today88(){return fmtDate(new Date());}
+  function completedList88(){state.completedTasksTable=Array.isArray(state.completedTasksTable)?state.completedTasksTable:[];return state.completedTasksTable;}
+  function normCompleted88(c){
+    if(!c)return null;
+    c.completedId=c.completedId||c.id;
+    c.originalTaskId=c.originalTaskId||c.original_task_id||null;
+    c.type=c.type||c.task_type||'daily';
+    c.title=c.title||'Ohne Titel';
+    c.note=c.note||'';
+    c.originalDate=c.originalDate||c.original_date||null;
+    c.completedDate=c.completedDate||c.completed_date||today88();
+    c.originalGroupId=c.originalGroupId||c.original_group_id||'';
+    c.originalGroupName=c.originalGroupName||c.original_group_name||'Unbekannte Gruppe';
+    c.originalGroupColor=c.originalGroupColor||c.original_group_color||null;
+    return c;
+  }
+  function completedKey88(c){
+    c=normCompleted88(c);
+    if(c?.originalTaskId)return `${c.type}|id|${c.originalTaskId}`;
+    return `${c?.type||'daily'}|fallback|${esc88(c?.title).trim().toLowerCase()}|${c?.originalDate||''}|${c?.completedDate||''}|${c?.originalGroupId||c?.originalGroupName||''}`;
+  }
+  function completedForTask88(type,id){
+    if(!id)return null;
+    return completedList88().map(normCompleted88).find(c=>c&&String(c.originalTaskId||'')===String(id)&&String(c.type||'daily')===String(type));
+  }
+  function groupForTask88(t,type){
+    if(type==='long'){
+      const g=(state.longColumns||[]).find(x=>String(x.id)===String(t.columnId||t.long_task_group_id));
+      return {id:t.columnId||'',name:g?.name||'Unbekannte Gruppe',color:g?.color||state.colors?.long||defaultColors.long};
+    }
+    if(type==='project'){
+      const p=(state.projects||[]).find(x=>String(x.id)===String(t.projectId||t.project_id));
+      return {id:t.projectId||t.project_id||'',name:p?.name||'Unbekanntes Projekt',color:p?.color||'#7c5cff'};
+    }
+    const g=(state.taskColumns||[]).find(x=>String(x.id)===String(t.columnId||t.task_group_id));
+    return {id:t.columnId||'',name:g?.name||'Unbekannte Gruppe',color:g?.color||state.colors?.task||defaultColors.task};
+  }
+  function insertRowForTask88(t,type){
+    const g=groupForTask88(t,type);
+    return {
+      user_id:currentUser.id,
+      original_task_id:isUuid(t.id)?t.id:null,
+      task_type:type,
+      title:t.title||'Ohne Titel',
+      note:t.note||null,
+      original_date:type==='long'?null:(t.date||t.dueDate||t.due_date||today88()),
+      completed_date:today88(),
+      original_group_id:String(g.id||''),
+      original_group_name:g.name||'Unbekannte Gruppe',
+      original_group_color:g.color||null
+    };
+  }
+  function completedFromRow88(r){
+    return normCompleted88({
+      completedId:r.id,
+      originalTaskId:r.original_task_id,
+      type:r.task_type||'daily',
+      title:r.title||'Ohne Titel',
+      note:r.note||'',
+      originalDate:r.original_date||null,
+      completedDate:r.completed_date||today88(),
+      originalGroupId:r.original_group_id||'',
+      originalGroupName:r.original_group_name||'Unbekannte Gruppe',
+      originalGroupColor:r.original_group_color||null,
+      createdAt:r.created_at||null
+    });
+  }
+  function removeActiveLocal88(type,id){
+    if(type==='long')state.longterm=(state.longterm||[]).filter(x=>String(x.id)!==String(id));
+    else if(type==='project')state.projectTasks=(state.projectTasks||[]).filter(x=>String(x.id)!==String(id));
+    else state.tasks=(state.tasks||[]).filter(x=>String(x.id)!==String(id));
+  }
+  async function closeOriginalTask88(t,type){
+    if(!currentUser||!isUuid(t.id))return;
+    const completedDate=today88();
+    try{
+      if(type==='long')await supabaseClient.from('long_tasks').update({done:true,completed_date:completedDate}).eq('user_id',currentUser.id).eq('id',t.id);
+      else if(type==='project')await supabaseClient.from('project_tasks').update({done:true,completed_date:completedDate}).eq('user_id',currentUser.id).eq('id',t.id);
+      else await supabaseClient.from('tasks').update({done:true,completed_date:completedDate}).eq('user_id',currentUser.id).eq('id',t.id);
+    }catch(error){console.warn('Rev088: Status-Update vor Löschen fehlgeschlagen',error);}
+    try{
+      if(type==='long')await supabaseClient.from('long_tasks').delete().eq('user_id',currentUser.id).eq('id',t.id);
+      else if(type==='project')await supabaseClient.from('project_tasks').delete().eq('user_id',currentUser.id).eq('id',t.id);
+      else await supabaseClient.from('tasks').delete().eq('user_id',currentUser.id).eq('id',t.id);
+    }catch(error){console.warn('Rev088: Löschen des Originaltasks fehlgeschlagen; done=true bleibt als Schutz bestehen',error);}
+  }
+  async function findExistingCompleted88(t,type){
+    const local=completedForTask88(type,t.id);
+    if(local)return local;
+    if(!currentUser||!isUuid(t.id))return null;
+    const {data,error}=await supabaseClient.from(COMPLETED_TABLE_REV88)
+      .select('*')
+      .eq('user_id',currentUser.id)
+      .eq('task_type',type)
+      .eq('original_task_id',t.id)
+      .order('created_at',{ascending:false})
+      .limit(1);
+    if(error){console.warn('Rev088: completed_tasks Suche fehlgeschlagen',error);return null;}
+    if(data&&data.length){
+      const c=completedFromRow88(data[0]);
+      completedList88().unshift(c);
+      return c;
+    }
+    return null;
+  }
+  async function completeTaskIdempotent88(t,type,checkbox){
+    if(!requireLogin()){if(checkbox)checkbox.checked=false;return;}
+    if(!t)return;
+    if(checkbox)checkbox.disabled=true;
+    try{
+      let completed=await findExistingCompleted88(t,type);
+      if(!completed){
+        const row=insertRowForTask88(t,type);
+        const {data,error}=await supabaseClient.from(COMPLETED_TABLE_REV88).insert(row).select('*').single();
+        if(error)throw error;
+        completed=completedFromRow88(data);
+        completedList88().unshift(completed);
+      }
+      t.done=true;t.completedDate=today88();
+      removeActiveLocal88(type,t.id);
+      await closeOriginalTask88(t,type);
+      await cleanupCompletedDuplicates88(true);
+      render();
+    }catch(error){
+      if(checkbox){checkbox.checked=false;checkbox.disabled=false;}
+      toast('Task konnte nicht sauber erledigt werden: '+(error.message||String(error)));
+    }
+  }
+  function purgeActiveCompletedFromState88(){
+    const doneIds=new Set(completedList88().map(normCompleted88).filter(c=>c&&c.originalTaskId).map(c=>`${c.type}|${c.originalTaskId}`));
+    const beforeT=(state.tasks||[]).length,beforeL=(state.longterm||[]).length,beforeP=(state.projectTasks||[]).length;
+    state.tasks=(state.tasks||[]).filter(t=>!doneIds.has(`daily|${t.id}`));
+    state.longterm=(state.longterm||[]).filter(t=>!doneIds.has(`long|${t.id}`));
+    state.projectTasks=(state.projectTasks||[]).filter(t=>!doneIds.has(`project|${t.id}`));
+    return beforeT!==state.tasks.length||beforeL!==state.longterm.length||beforeP!==state.projectTasks.length;
+  }
+  async function cleanupCompletedDuplicates88(deleteInDb=false){
+    if(cleanRunning.value)return;
+    cleanRunning.value=true;
+    try{
+      const seen=new Map();
+      const keep=[];
+      const remove=[];
+      for(const raw of completedList88()){
+        const c=normCompleted88(raw); if(!c)continue;
+        const key=completedKey88(c);
+        if(!seen.has(key)){seen.set(key,c);keep.push(c);}else remove.push(c);
+      }
+      state.completedTasksTable=keep;
+      purgeActiveCompletedFromState88();
+      if(deleteInDb&&currentUser&&remove.length){
+        const ids=remove.map(c=>c.completedId).filter(Boolean);
+        if(ids.length){
+          const {error}=await supabaseClient.from(COMPLETED_TABLE_REV88).delete().eq('user_id',currentUser.id).in('id',ids);
+          if(error)console.warn('Rev088: Dubletten-Löschen fehlgeschlagen',error);
+        }
+      }
+    }finally{cleanRunning.value=false;}
+  }
+  function rebindTaskCompletion88(scope=document){
+    scope.querySelectorAll('[data-toggle-task]').forEach(c=>{
+      c.onclick=ev=>ev.stopPropagation();
+      c.onchange=async ev=>{
+        ev.stopPropagation();
+        const t=(state.tasks||[]).find(x=>String(x.id)===String(c.dataset.toggleTask));
+        if(c.checked)await completeTaskIdempotent88(t,'daily',c);
+      };
+    });
+    scope.querySelectorAll('[data-toggle-long]').forEach(c=>{
+      c.onclick=ev=>ev.stopPropagation();
+      c.onchange=async ev=>{
+        ev.stopPropagation();
+        const t=(state.longterm||[]).find(x=>String(x.id)===String(c.dataset.toggleLong));
+        if(c.checked)await completeTaskIdempotent88(t,'long',c);
+      };
+    });
+    scope.querySelectorAll('[data-toggle-project-task]').forEach(c=>{
+      c.onclick=ev=>ev.stopPropagation();
+      c.onchange=async ev=>{
+        ev.stopPropagation();
+        const t=(state.projectTasks||[]).find(x=>String(x.id)===String(c.dataset.toggleProjectTask));
+        if(c.checked)await completeTaskIdempotent88(t,'project',c);
+      };
+    });
+  }
+  const prevDayCard88=dayCard;
+  window.dayCard=dayCard=function(date){
+    cleanupCompletedDuplicates88(false);
+    const node=prevDayCard88.apply(this,arguments);
+    rebindTaskCompletion88(node);
+    return node;
+  };
+  const prevRenderLong88=renderLong;
+  renderLong=function(){
+    cleanupCompletedDuplicates88(false);
+    const out=prevRenderLong88.apply(this,arguments);
+    rebindTaskCompletion88(document.querySelector('#longTermList')||document);
+    return out;
+  };
+  if(typeof loadRelationalData==='function'){
+    const prevLoadRelationalData88=loadRelationalData;
+    loadRelationalData=async function(){
+      const out=await prevLoadRelationalData88.apply(this,arguments);
+      await cleanupCompletedDuplicates88(true);
+      return out;
+    };
+    window.loadRelationalData=loadRelationalData;
+  }
+  if(typeof loadStateFromCloud==='function'){
+    const prevLoadStateFromCloud88=loadStateFromCloud;
+    loadStateFromCloud=async function(){
+      const out=await prevLoadStateFromCloud88.apply(this,arguments);
+      await cleanupCompletedDuplicates88(true);
+      return out;
+    };
+    window.loadStateFromCloud=loadStateFromCloud;
+  }
+  setTimeout(()=>cleanupCompletedDuplicates88(true),800);
+  window.KalenderTaskCompletionRev088={cleanup:cleanupCompletedDuplicates88,complete:completeTaskIdempotent88};
+})();
