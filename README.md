@@ -1,36 +1,32 @@
-# Kalender App – Revision 083 Cleanup
+# Kalender App – Revision 084 Cleanup 2
 
-Ausgangsbasis: Revision 082 / modularer Zwischenstand.
+Ausgangsbasis: Revision 083 Cleanup.
 
 ## Ziel dieser Revision
 
-Diese Revision ist eine risikoarme Verschlankungsrevision. Der Schwerpunkt liegt nicht auf neuen Funktionen, sondern auf dem Entfernen eindeutig überschatteter Alt-Funktionsblöcke im Hauptcode.
+Weitere Verschlankung des Hauptcodes ohne Änderung an Datenbankstruktur, Supabase-Tabellen, Speicherlogik oder ICS-Proxy.
 
-## Änderungen in Revision 083
+## Änderungen in Revision 084
 
-- `js/app.js` bereinigt: 16 überschattete Top-Level-Funktionsdeklarationen entfernt.
-- Entfernte Alt-Funktionsblöcke waren durch spätere gleichnamige Funktionen ersetzt und damit im aktuellen Laufzeitstand nicht mehr maßgeblich.
-- Keine Änderung an Supabase-URL, anon key, Tabellenstruktur oder RLS-Logik.
-- Keine Änderung an ICS-Proxy, ICS-Parser, Datenbanktabellen oder Speicherstrategie.
-- Modulstruktur beibehalten: `config.js`, `utils.js`, `ics-parser.js`, `icons.js`, `app.js`.
-- Syntaxprüfung mit `node --check` für alle JavaScript-Dateien erfolgreich.
+- Doppelten `Rev 051`-Funktionsblock am Anfang von `js/app.js` entfernt.
+- Die spätere `Rev 051`-Implementierung bleibt erhalten, weil sie in der gewachsenen Override-Kette an der richtigen Position liegt.
+- Zwei alte, nicht mehr referenzierte Alias-Variablen entfernt.
+- Vier alte globale Kompatibilitäts-Exports aus `Rev 056` entfernt, weil sie im Code und im Markup nicht referenziert werden.
+- Keine fachliche Funktion bewusst verändert.
 
-## Auszutauschende Dateien
+## Geänderte Dateien
 
 - `js/app.js`
-- optional: `README.md`
-- optional: `package.json`
+- `package.json`
+- `README.md`
 
 ## Nicht umgesetzt
 
-- Keine Entfernung alter Rev-CSS-Blöcke, weil dort viele spätere Designregeln bewusst frühere Regeln überschreiben. Eine automatische Bereinigung wäre optisch riskant.
-- Keine fachliche Zerlegung von `app.js` in viele weitere Module, weil zuerst diese Cleanup-Revision getestet werden sollte.
-- Keine Änderungen an Datenbank-Schreib-/Löschlogik, um Datenverlust oder Seiteneffekte zu vermeiden.
+- Keine Entfernung kompletter späterer Rev-Blöcke wie Rev 033 bis Rev 078. Diese Blöcke sind trotz alter Nummern Teil der aktuellen Override-Kette und greifen in Render-, Speicher-, Projekt-, Zeitstrahl- oder Monatslogik ein.
+- Keine CSS-Bereinigung. Die CSS-Datei enthält viele alte Revisionskommentare, aber spätere Regeln überschreiben frühere Regeln bewusst. Eine aggressive Entfernung wäre aktuell zu riskant.
+- Keine Änderung an Supabase, RLS, Tabellen, Edge Function oder Login-Verhalten.
 
-## Prüfstand
+## Prüfung
 
-- `node --check js/app.js`: erfolgreich
-- `node --check js/core/config.js`: erfolgreich
-- `node --check js/core/utils.js`: erfolgreich
-- `node --check js/core/ics-parser.js`: erfolgreich
-- `node --check js/ui/icons.js`: erfolgreich
+- `node --check js/app.js` erfolgreich.
+- `node --check` für `js/core/config.js`, `js/core/utils.js`, `js/core/ics-parser.js` und `js/ui/icons.js` erfolgreich.

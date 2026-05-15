@@ -1,121 +1,3 @@
-/* Rev 051: Monatslogik, Zeitstrahl-Schrift, eigene Termine bearbeitbar */
-(function(){
-  function toDateInputRev51(d){
-    const x=new Date(d); if(isNaN(x))return fmtDate(new Date()); return fmtDate(x);
-  }
-  function toTimeInputRev51(d, fallback='09:00'){
-    const x=new Date(d); if(isNaN(x))return fallback;
-    return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0');
-  }
-  function parseLocalDateTimeRev51(date,time,allDay,endOfDay=false){
-    if(allDay)return new Date(date+(endOfDay?'T23:59:00':'T00:00:00'));
-    return new Date(date+'T'+(time||'00:00')+':00');
-  }
-  function monthEventsForDayRev51(d){
-    return visibleCalendars().flatMap(({cal:c})=>{
-      const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});
-      const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});
-      return [...ics,...own];
-    }).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status,allDay:!!e.allDay,start:e.start||''}))
-      .sort((a,b)=>Number(!b.allDay)-Number(!a.allDay)||new Date(a.start)-new Date(b.start));
-  }
-  window.renderMonthView=function(){
-    const root=$('#monthView');if(!root)return;
-    const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
-    const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
-    const days=['Mo','Di','Mi','Do','Fr','Sa','So'];
-    let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
-    const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);
-    const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate&&t.dueDate<todayIso&&!t.done));
-    for(let i=0;i<42;i++){
-      const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
-      const events=monthEventsForDayRev51(d);
-      const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate===iso&&!t.done));
-      const showOverdueBar=sameDay(d,today)&&openOverdueToday;
-      const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';
-      const compactAll=events.length>2;
-      const evHtml=events.slice(0,4).map((e,idx)=>{
-        const compact=compactAll||String(e.summary||'').length>24||idx>1;
-        return `<div class="month-event ${compact?'month-event-compact':''} ${e.allDay?'month-event-all-day':''}" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${compact?'':escapeHtml(shortText(e.summary,24))}</div>`;
-      }).join('');
-      html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${dateDERev046(d)} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${evHtml}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;
-    }
-    html+='</div>';root.innerHTML=html;
-    $('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};
-    $('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};
-    $$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});
-  };
-
-  async function updateOwnEventRev51(event, oldData){
-    if(!currentUser||!isUuid(event.id))throw new Error('Termin ist nicht sauber in der Datenbank referenziert.');
-    const exists=await ownEventExistsRev046(event.id);
-    if(!exists)throw new Error('Der Termin existiert nicht mehr. Er wurde vermutlich auf einem anderen Gerät gelöscht.');
-    const row={
-      calendar_source_id:event.sourceId,
-      title:event.summary||'Ohne Titel',
-      location:event.location||null,
-      description:event.description||null,
-      start_time:event.start,
-      end_time:event.end||null,
-      all_day:!!event.allDay,
-      recurrence:event.recurrence||'none',
-      travel_time:event.travelTime||null,
-      status:event.status||'active',
-      updated_at:new Date().toISOString()
-    };
-    const {error}=await supabaseClient.from('own_events').update(row).eq('user_id',currentUser.id).eq('id',event.id);
-    if(error)throw error;
-    if(typeof logOwnEventRev047==='function')await logOwnEventRev047('update',oldData,event);
-  }
-  function openOwnEventEditModalRev51(calIdx,evtIdx){
-    if(!requireLogin())return;
-    const cal=state.calendars[Number(calIdx)];
-    const evt=(cal?.ownEvents||[])[Number(evtIdx)];
-    if(!cal||!evt)return toast('Eigener Termin lokal nicht gefunden.');
-    const ownSources=(cal.links||[]).filter(l=>l.type==='own');
-    const dateVal=toDateInputRev51(evt.start), startVal=toTimeInputRev51(evt.start,'09:00'), endVal=toTimeInputRev51(evt.end,'10:00');
-    $('#modalTitle').textContent='Eigenen Termin bearbeiten';
-    $('#modalContent').innerHTML=`<div class="own-event-edit-grid"><label>Titel</label><input id="editOwnTitleRev51" value="${escapeHtml(evt.summary||'')}"><label>Eigener Kalender</label><select id="editOwnSourceRev51">${ownSources.map(l=>`<option value="${escapeHtml(l.id)}" ${evt.sourceId===l.id?'selected':''}>${escapeHtml(l.name)}</option>`).join('')}</select><label>Ort</label><input id="editOwnLocationRev51" value="${escapeHtml(evt.location||'')}"><label>Datum</label><input id="editOwnDateRev51" type="date" value="${escapeHtml(dateVal)}"><label>Wiederholung</label><select id="editOwnRecurrenceRev51"><option value="none">Keine Wiederholung</option><option value="weekly">Wöchentlich</option><option value="monthly">Monatlich</option><option value="yearly">Jährlich</option></select><label>Ganztägig</label><select id="editOwnAllDayRev51"><option value="false">Nein</option><option value="true">Ja</option></select><label>Startzeit</label><input id="editOwnStartRev51" type="time" value="${escapeHtml(startVal)}"><label>Endzeit</label><input id="editOwnEndRev51" type="time" value="${escapeHtml(endVal)}"><label>Wegzeit</label><input id="editOwnTravelRev51" value="${escapeHtml(evt.travelTime||'')}" placeholder="z. B. 20 Min."><label>Details / Notizen</label><textarea id="editOwnDescriptionRev51" rows="5">${escapeHtml(evt.description||'')}</textarea><button class="btn danger" id="deleteOwnFromEditRev51" type="button">Eigenen Termin / Serie löschen</button></div>`;
-    $('#editOwnRecurrenceRev51').value=evt.recurrence||'none';
-    $('#editOwnAllDayRev51').value=evt.allDay?'true':'false';
-    $('#modalBackdrop').style.display='flex';$('#saveModal').style.display='';
-    $('#saveModal').onclick=async()=>{
-      const oldData=structuredClone(evt);
-      const sourceId=$('#editOwnSourceRev51').value;
-      const src=ownSources.find(l=>l.id===sourceId)||ownSources[0];
-      const title=$('#editOwnTitleRev51').value.trim(); if(!title)return toast('Termin ohne Titel wird nicht gespeichert.');
-      const date=$('#editOwnDateRev51').value||dateVal;
-      const allDay=$('#editOwnAllDayRev51').value==='true';
-      evt.sourceId=sourceId;evt.summary=title;evt.location=$('#editOwnLocationRev51').value.trim();evt.recurrence=$('#editOwnRecurrenceRev51').value||'none';evt.allDay=allDay;
-      evt.start=parseLocalDateTimeRev51(date,$('#editOwnStartRev51').value,allDay,false).toISOString();
-      evt.end=parseLocalDateTimeRev51(date,$('#editOwnEndRev51').value,allDay,true).toISOString();
-      evt.travelTime=$('#editOwnTravelRev51').value.trim();evt.description=$('#editOwnDescriptionRev51').value.trim();evt.source=src?.name||cal.name;evt.icsName=src?.name||cal.name;evt.icsColor=src?.color||state.colors.event;evt.status=evt.status||'active';
-      try{await updateOwnEventRev51(evt,oldData);closeModal();render();toast('Eigener Termin aktualisiert.');}
-      catch(error){toast(error.message||String(error));closeModal();await loadStateFromCloud();}
-    };
-    $('#deleteOwnFromEditRev51').onclick=async()=>{
-      if(!confirm('Eigenen Termin / Serie löschen?'))return;
-      try{await deleteOwnEventRev046(evt.id);cal.ownEvents.splice(Number(evtIdx),1);closeModal();render();toast('Eigener Termin gelöscht.');}
-      catch(error){toast(error.message||String(error));closeModal();await loadStateFromCloud();}
-    };
-  }
-  const prevOpenEventDetailRev51=openEventDetailModal;
-  openEventDetailModal=function(ref){
-    const [type,calIdx,evtIdx]=String(ref||'').split(':');
-    if(type==='own')return openOwnEventEditModalRev51(calIdx,evtIdx);
-    return prevOpenEventDetailRev51(ref);
-  };
-
-  const prevRenderSidebarTimelineRev51=window.renderSidebarTimelineRev050;
-  window.renderSidebarTimelineRev050=function(){
-    prevRenderSidebarTimelineRev51();
-    document.querySelectorAll('.timeline-event-block').forEach(block=>{
-      const h=parseFloat(block.style.height)||block.offsetHeight||0;
-      if(h<28)block.classList.add('timeline-event-tiny');
-    });
-  };
-})();
-
 const {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
@@ -2437,7 +2319,6 @@ dayCard=function(date){
     if(!t)return;
     if(done){t.done=true;t.completedDate=t.completedDate||fmtDate(new Date());upsertCompletedArchiveRev52(t,type);}else{t.done=false;t.completedDate=null;removeCompletedArchiveRev52(t.id,type);}
   };
-  const oldCompletedDoneListRev52=completedDoneList;
   window.completedDoneList=function(tasks,longs){
     const a=(tasks||[]).map(t=>{const ar=archiveForRev52(t.id,'task');const g=ar?.groupName||groupNameForTaskRev52(t,false);return `<div class="card task task-card-compact completed-task-card" data-task-ref="task:${escapeHtml(t.id)}"><div class="task-row"><input type="checkbox" checked data-toggle-task="${escapeHtml(t.id)}"><div><span class="completed-title" title="${escapeHtml(ar?.title||t.title)}">${escapeHtml(shortText(ar?.title||t.title,34))}</span><span class="completed-meta">Erledigt am ${escapeHtml(t.completedDate||ar?.completedDate||'')} · Gruppe damals: ${escapeHtml(g)}</span></div><button class="kebab" data-delete-task="${escapeHtml(t.id)}">×</button></div></div>`;}).join('');
     const b=(longs||[]).map(t=>{const ar=archiveForRev52(t.id,'long');const g=ar?.groupName||groupNameForTaskRev52(t,true);return `<div class="card completed-long completed-task-card" data-task-ref="long:${escapeHtml(t.id)}"><div><span class="completed-title">${escapeHtml(shortText(ar?.title||t.title,34))}</span><span class="completed-meta">Langfristiger Task erledigt am ${escapeHtml(t.completedDate||ar?.completedDate||'')} · Gruppe damals: ${escapeHtml(g)}</span></div></div>`;}).join('');
@@ -2489,7 +2370,6 @@ dayCard=function(date){
     const sel=document.querySelector('#timelineStepModalRev52'); if(sel)sel.value=String(state.timelineStep||30);
   }
 
-  const oldOpenSettingsRev52=openSyncSettingsModal;
   window.openSyncSettingsModal=function(){
     ensureRev52State();
     $('#modalTitle').textContent='Einstellungen';
@@ -3315,10 +3195,6 @@ dayCard=function(date){
 
   window.openSyncSettingsModal=openSettingsRev56;
   window.openSettingsRev56=openSettingsRev56;
-  window.completeAnyTaskRev56=completeAnyTask56;
-  window.reopenCompletedRev56=reopenCompleted56;
-  window.deleteCompletedRev56=deleteCompleted56;
-  window.openCompletedDetailRev56=openCompletedDetail56;
 
   setTimeout(()=>{ensureRev56State();bindOptions56();applyAppearance();decorateClickableTasks56();syncServerTimeRev56().then(()=>{applyAppearance();render();});},300);
 })();

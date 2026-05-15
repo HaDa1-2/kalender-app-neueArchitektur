@@ -1,8 +1,8 @@
 {
-  "name": "kalender-app-rev083-cleanup",
-  "version": "0.83.0",
+  "name": "kalender-app-rev084-cleanup2",
+  "version": "0.84.0",
   "private": true,
-  "description": "Revision 083: risikoarme Code-Verschlankung durch Entfernung überschatteter Top-Level-Funktionen",
+  "description": "Revision 084: weitere sichere Altblock-Bereinigung in js/app.js",
   "scripts": {
     "start": "vercel dev"
   }
