@@ -397,7 +397,7 @@ function openCloudModal(){
 </div>`,()=>{persist();render();});}
 let syncTimer=null;function setupAutoSync(){if(syncTimer)clearInterval(syncTimer);syncTimer=null;const hint=$('#syncHint')||$('#mSyncHint');if(!currentUser){if(hint)hint.textContent='Nicht angemeldet. Automatische Synchronisierung ist deaktiviert.';return;}state.fetchMode='proxy';state.proxyUrl=state.proxyUrl||DEFAULT_PROXY_URL;const m=Number(state.syncInterval||0);if(hint)hint.textContent=m?`Automatische Synchronisierung aktiv: alle ${m} Minuten. ICS-Links werden über den fest hinterlegten Proxy geladen.`:'Automatische Synchronisierung aus. Manuell über den Button aktualisieren.';if(m>0){syncTimer=setInterval(syncAllICS,m*60*1000);}}
 let monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);function openMonthModal(){monthCursor=new Date();monthCursor.setDate(1);monthCursor.setHours(0,0,0,0);$('#modalTitle').textContent='Monatsübersicht';$('#modalContent').innerHTML='<div id="monthView"></div>';$('#modalBackdrop').style.display='flex';$('#saveModal').style.display='none';renderMonthView();}
-function renderMonthView(){const root=$('#monthView');if(!root)return;const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));const days=['Mo','Di','Mi','Do','Fr','Sa','So'];let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done);for(let i=0;i<42;i++){const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();const events=visibleCalendars().flatMap(({cal:c})=>{const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});return [...ics,...own];}).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status}));const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done);const showOverdueBar=sameDay(d,today)&&openOverdueToday;const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${iso} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${events.slice(0,3).map(e=>`<div class="month-event" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${escapeHtml(shortText(e.summary,38))}</div>`).join('')}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;}html+='</div>';root.innerHTML=html;$('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};$('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};$$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});}function collectSearchItems(){
+function collectSearchItems(){
   const items=[];
   (state.tasks||[]).forEach(t=>items.push({type:'Task',title:t.title||'',date:t.date||fmtDate(new Date()),meta:t.note||'Tagestask'}));
   (state.longterm||[]).forEach(t=>items.push({type:'Langfristig',title:t.title||'',date:t.createdDate||fmtDate(new Date()),meta:t.note||'Langfristiger Task'}));
@@ -2141,40 +2141,6 @@ dayCard=function(date){
     if(allDay)return new Date(date+(endOfDay?'T23:59:00':'T00:00:00'));
     return new Date(date+'T'+(time||'00:00')+':00');
   }
-  function monthEventsForDayRev51(d){
-    return visibleCalendars().flatMap(({cal:c})=>{
-      const ics=(c.events||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.icsId);return !l||l.visible!==false;});
-      const own=(c.ownEvents||[]).map(e=>eventOccurrenceForDate(e,d)).filter(e=>{if(!e)return false;const l=(c.links||[]).find(x=>x.id===e.sourceId);return l&&l.visible!==false;});
-      return [...ics,...own];
-    }).map(e=>({summary:e.summary,color:e.icsColor||state.colors.event,status:e.status,allDay:!!e.allDay,start:e.start||''}))
-      .sort((a,b)=>Number(!b.allDay)-Number(!a.allDay)||new Date(a.start)-new Date(b.start));
-  }
-  window.renderMonthView=function(){
-    const root=$('#monthView');if(!root)return;
-    const monthName=monthCursor.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
-    const first=new Date(monthCursor);const start=new Date(first);start.setDate(first.getDate()-((first.getDay()+6)%7));
-    const days=['Mo','Di','Mi','Do','Fr','Sa','So'];
-    let html=`<div class="month-nav"><button class="btn small" id="mPrev">← Monat</button><div class="month-title">${monthName}</div><button class="btn small" id="mNext">Monat →</button></div><div class="month-grid">${days.map(d=>`<div class="month-head">${d}</div>`).join('')}`;
-    const today=new Date();today.setHours(0,0,0,0);const todayIso=fmtDate(today);
-    const openOverdueToday=state.tasks.some(t=>t.date<todayIso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate&&t.dueDate<todayIso&&!t.done));
-    for(let i=0;i<42;i++){
-      const d=addDays(start,i);const iso=fmtDate(d);const inMonth=d.getMonth()===monthCursor.getMonth();
-      const events=monthEventsForDayRev51(d);
-      const hasOpenDayTasks=state.tasks.some(t=>t.date===iso&&!t.done)||((state.projectTasks||[]).some(t=>t.dueDate===iso&&!t.done));
-      const showOverdueBar=sameDay(d,today)&&openOverdueToday;
-      const kw=(d.getDay()===1)?` <span class="kw-label">(KW${getISOWeek(d)})</span>`:'';
-      const compactAll=events.length>2;
-      const evHtml=events.slice(0,4).map((e,idx)=>{
-        const compact=compactAll||String(e.summary||'').length>24||idx>1;
-        return `<div class="month-event ${compact?'month-event-compact':''} ${e.allDay?'month-event-all-day':''}" style="background:${escapeHtml(e.color)}!important;text-decoration:${String(e.status||'').toUpperCase()==='CANCELLED'?'line-through':'none'}" title="${escapeHtml(e.summary)}">${compact?'':escapeHtml(shortText(e.summary,24))}</div>`;
-      }).join('');
-      html+=`<div class="month-cell ${inMonth?'':'out'} ${sameDay(d,today)?'today':''}" data-month-date="${iso}" title="Tagesansicht ab ${dateDERev046(d)} öffnen"><div class="month-day"><span>${d.getDate()}</span>${kw}</div>${evHtml}${hasOpenDayTasks?'<div class="month-statusbar task" title="Tagesaufgaben offen"></div>':''}${showOverdueBar?'<div class="month-statusbar overdue" title="Überfällige Aufgaben offen"></div>':''}</div>`;
-    }
-    html+='</div>';root.innerHTML=html;
-    $('#mPrev').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()-1);renderMonthView();};
-    $('#mNext').onclick=()=>{monthCursor.setMonth(monthCursor.getMonth()+1);renderMonthView();};
-    $$('[data-month-date]').forEach(cell=>cell.onclick=()=>{const target=new Date(cell.dataset.monthDate+'T00:00:00');const base=new Date();base.setHours(0,0,0,0);state.offset=Math.round((target-base)/86400000);closeModal();render();});
-  };
 
   async function updateOwnEventRev51(event, oldData){
     if(!currentUser||!isUuid(event.id))throw new Error('Termin ist nicht sauber in der Datenbank referenziert.');
@@ -2742,8 +2708,6 @@ dayCard=function(date){
 
   function rev55GroupList(kind){ return kind==='long' ? (state.longColumns||[]) : (state.taskColumns||[]); }
   function rev55Table(kind){ return kind==='long' ? 'long_task_groups' : 'task_groups'; }
-  function rev55TaskTable(kind){ return kind==='long' ? 'long_tasks' : 'tasks'; }
-  function rev55GroupFk(kind){ return kind==='long' ? 'long_task_group_id' : 'task_group_id'; }
   function rev55DefaultColor(kind){ return kind==='long' ? (state.colors?.long||defaultColors.long) : (state.colors?.task||defaultColors.task); }
   function rev55FindGroup(kind, groupId, groupName){
     const list=rev55GroupList(kind);
@@ -5900,11 +5864,6 @@ dayCard=function(date){
   function rev73EnsureUuid(obj){ if(!obj.id||!isUuid(obj.id))obj.id=crypto.randomUUID(); return obj.id; }
   async function rev73Upsert(table,row){
     const {error}=await supabaseClient.from(table).upsert(row,{onConflict:'id'});
-    if(error)throw error;
-  }
-  async function rev73Delete(table,id){
-    if(!currentUser||!id)return;
-    const {error}=await supabaseClient.from(table).delete().eq('user_id',currentUser.id).eq('id',id);
     if(error)throw error;
   }
   function rev73CalendarGroupRow(cal,position){

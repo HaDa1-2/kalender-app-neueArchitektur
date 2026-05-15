@@ -30,3 +30,19 @@ Weitere Verschlankung des Hauptcodes ohne Änderung an Datenbankstruktur, Supaba
 
 - `node --check js/app.js` erfolgreich.
 - `node --check` für `js/core/config.js`, `js/core/utils.js`, `js/core/ics-parser.js` und `js/ui/icons.js` erfolgreich.
+
+## Revision 085
+
+Änderungen:
+- Weitere risikoarme Verschlankung in `js/app.js`.
+- Entfernt wurde die alte Basis-`renderMonthView`-Funktion, weil die Monatsansicht später durch Revision 078 vollständig ersetzt wird.
+- Entfernt wurde die alte Rev051-Monatsrenderlogik inklusive `monthEventsForDayRev51`, weil sie durch spätere Monatslogik überschrieben wird.
+- Entfernt wurden nachweislich ungenutzte Hilfsfunktionen: `rev55TaskTable`, `rev55GroupFk`, `rev73Delete`.
+
+Nicht umgesetzt:
+- Keine Entfernung aktiver Override-Ketten für eigene Termine, Projekte, Einstellungen, Zeitstrahl oder Datenbank-Speicherung. Diese Blöcke sind weiterhin miteinander verschachtelt und daher nicht risikofrei löschbar.
+- Keine CSS-Bereinigung, weil ältere CSS-Blöcke weiterhin durch spätere Regeln übersteuert werden und ein Entfernen Layout-Rückfälle auslösen kann.
+
+Prüfung:
+- `node --check` für `js/app.js`, `js/core/utils.js`, `js/core/config.js`, `js/core/ics-parser.js` und `js/ui/icons.js` erfolgreich.
+
